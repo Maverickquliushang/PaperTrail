@@ -5,7 +5,7 @@ type RankedPaper = Paper & { recommendation_score?: number };
 const titles = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' });
 
 export function sortPapers<T extends RankedPaper>(papers: T[], order: PaperOrder, recommended = false): T[] {
-  const date = (paper: T) => paper.date && Number.isFinite(Date.parse(paper.date)) ? paper.date.slice(0, 10) : null;
+  const date = (paper: T) => paper.date && Number.isFinite(Date.parse(paper.date)) ? paper.date.slice(0, 10) : paper.year ? `${paper.year}-00-00` : null;
   const score = (paper: T) => {
     const value = recommended ? paper.recommendation_score : paper.score;
     return typeof value === 'number' && Number.isFinite(value) ? value : -Infinity;
@@ -32,6 +32,6 @@ export function PaperSort({ value, onChange, recommended = false }: {
       <option value="date_asc">日期：从旧到新</option>
       <option value="title">标题：字母顺序</option>
     </select></label>
-    <span>{value.startsWith('date') ? '按卡片展示日期排序，缺失日期排在最后；日期含义见来源详情。' : '切换后立即重排当前列表。'}{recommended ? '不重新生成推荐。' : '不重新请求论文来源。'}</span>
+    <span>{value.startsWith('date') ? '按卡片展示日期排序，仅年份按年份排序，日期和年份均缺失时排在最后；日期含义见来源详情。' : '切换后立即重排当前列表。'}{recommended ? '不重新生成推荐。' : '不重新请求论文来源。'}</span>
   </div>;
 }

@@ -23,7 +23,7 @@ def merge_records(records, sort):
         groups.setdefault(root(i), []).append(record)
     papers = [format_group(group, sort)[0] for group in groups.values()]
     if sort == 'date':
-        papers.sort(key=lambda p: (p['date'] or '', p['score'], p['id']), reverse=True)
+        papers.sort(key=lambda p: (p['date'] or (f"{p['year']}-00-00" if p.get('year') else ''), p['score'], p['id']), reverse=True)
     else:
         papers.sort(key=lambda p: (-p['score'], p['id']))
     return papers

@@ -121,3 +121,13 @@ def test_sse_completes_and_retains_evidence(tmp_path):
         assert "text/event-stream" in events.headers["content-type"]
         assert "event: snapshot" in events.text and '"done": true' in events.text
         assert client.get(f"/api/searches/{identifier}").json()["papers"][0]["arxiv_id"] == "2401.12345"
+
+
+def test_dblp_year_only_records_sort_without_inventing_dates():
+    items = [record("conferences", "dblp:a", publication_year=2019, index_provider="DBLP"),
+             record("conferences", "dblp:b", publication_year=2025, index_provider="DBLP"),
+             record("arxiv", "c", submitted_date="2023-05-01")]
+    papers = merge_records(items, "date")
+    assert [p["year"] for p in papers] == [2025, None, 2019]
+    assert papers[0]["date"] is None
+
