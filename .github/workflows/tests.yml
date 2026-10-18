@@ -32,3 +32,11 @@ jobs:
         working-directory: code/local/frontend
       - run: npm run build
         working-directory: code/local/frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: code/local/frontend
+      - name: Verify paper reading and detail pages
+        run: npm run test:e2e -- paper-pages.spec.ts
+        working-directory: code/local/frontend
+        env:
+          PAPERTRAIL_TEST_SERVER: '1'
+          PAPERTRAIL_TEST_URL: http://127.0.0.1:8769

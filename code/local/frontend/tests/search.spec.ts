@@ -23,7 +23,8 @@ test('partial source failure retains papers and accessible source details', asyn
   await page.getByRole('button', { name: '检索论文', exact: true }).click();
   await expect(page.getByText('1 个来源失败，其余结果已保留')).toBeVisible();
   await expect(page.locator('.paper-card')).toHaveCount(1);
-  await page.getByRole('button', { name: paper.title }).click();
+  await expect(page.getByRole('link', { name: paper.title })).toHaveAttribute('href', /^\/library\/paper.html\?local=arxiv%3A2601.12345&from=/);
+  await page.getByRole('button', { name: '摘要与来源', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByText('来源与时间记录', { exact: true })).toBeVisible();
   await expect(page.getByRole('dialog').getByRole('link', { name: 'PDF', exact: true })).toHaveAttribute('href', 'https://arxiv.org/pdf/2601.12345');

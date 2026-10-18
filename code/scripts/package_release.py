@@ -91,7 +91,7 @@ def main():
     (destination / 'RELEASE_NOTES.md').write_text(notes, encoding='utf-8')
     index = ROOT / 'versions/INDEX.md'
     prefix = index.read_text(encoding='utf-8') if index.exists() else '# 已验证版本\n\nZIP 仅保存在维护者本地，不提交普通 Git 仓库。\n\n'
-    entry = f'- [v{version}](v{version}/RELEASE_NOTES.md)：统一 code/ 结构与两版发布入口；校验见 [SHA256SUMS](v{version}/SHA256SUMS.txt)。\n'
+    entry = f'- [v{version}](v{version}/RELEASE_NOTES.md)：两版已验证源码与静态站点快照，功能见版本说明；校验见 [SHA256SUMS](v{version}/SHA256SUMS.txt)。\n'
     index.write_text(prefix + entry, encoding='utf-8')
     print(f'Archived {len(source)} source files and {len(static)} web files to versions/v{version}/')
 

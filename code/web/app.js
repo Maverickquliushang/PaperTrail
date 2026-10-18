@@ -1,3 +1,4 @@
+import {paperHref} from './paper-data.js';
 import {dailyArchive} from './daily.js';
 import {scopeKey, dateChoices, selectShards, createShardLoader} from './browse.js';
 import {sourceNames, translateQuery, search, sortPapers, safeLink, conferenceNames, reviewNames, dblpStreams, scopedPapers, conferenceYear} from './search.js';
@@ -6,6 +7,28 @@ const descriptions = {all:'浏览全部已采集来源',arxiv:'追踪各学科�
 let routeVersion = 0, loading = false;
 const loadShards = createShardLoader();
 let preview = false, preloadTimer;
+const openedPapers = new Set();
+let restoredPage = null, restoredScroll = null;
+function saveListState() {
+  try {sessionStorage.setItem(`papertrail:list:${location.pathname}${location.hash}`,JSON.stringify({
+    page,scroll:scrollY,opened:[...document.querySelectorAll('#results article[data-paper-id]')].filter(n=>n.querySelector('details')?.open).map(n=>n.dataset.paperId),
+    fields:Object.fromEntries(['query','start','end','sort','history','year'].map(key=>[key,$(key).value]))
+  }));} catch {}
+}
+window.addEventListener('pagehide',saveListState);
+function restoreListState() {
+  try {const state=JSON.parse(sessionStorage.getItem(`papertrail:list:${location.pathname}${location.hash}`) || 'null');
+    if(!state)return;
+    for(const key of ['query','start','end','sort','history','year'])if(typeof state.fields?.[key]==='string') {
+      if(['history','year'].includes(key) && ![...$(key).options].some(o=>o.value===state.fields[key])) {
+        const option=element('option',state.fields[key]);option.value=state.fields[key];$(key).append(option);
+      }
+      $(key).value=state.fields[key];
+    }
+    restoredPage=Number.isInteger(state.page)?state.page:1;restoredScroll=state.scroll;
+    for(const id of state.opened || [])openedPapers.add(id);
+  } catch {}
+}
 let daily = {days: new Map(), all: []};
 let catalog, terms, page = 1, source = 'all', mode = 'search', conference = 'all', review = 'accepted';
 function element(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
@@ -44,7 +67,7 @@ async function setRoute(allowRefresh = true) {
   conference = source === 'conferences' && conferenceNames.includes(parts[2]) ? parts[2] : 'all';
   review = source === 'openreview' && parts[2] === 'public' ? 'public' : 'accepted';
   const suffix = source === 'conferences' ? `/${conference}` : source === 'openreview' ? `/${review}` : '';
-  preview = false;
+  preview = false; $('apply-results').hidden = true;
   $('workspace-title').textContent = (sourceNames[source] || '综合工作台') + (source === 'conferences' && conference !== 'all' ? ` · ${conference}` : source === 'openreview' ? ` · ${review === 'public' ? '公开投稿' : '已录用'}` : '');
   for (const node of $('sources').children) { node.href = `#/${node.dataset.source}/${mode}`; node.classList.toggle('active', node.dataset.source === source); node.setAttribute('aria-current', node.dataset.source === source ? 'page' : 'false'); }
   for (const node of $('modes').children) { node.href = `#/${source}/${node.dataset.mode}${suffix}`; node.classList.toggle('active', node.dataset.mode === mode); }
@@ -66,7 +89,7 @@ async function setRoute(allowRefresh = true) {
       if (version !== routeVersion) return;
       $('load-status').textContent = `正在加载 ${done}/${total} 个数据分片；已加载内容可先浏览。`;
       if (mode === 'search' && (!lastPreview || performance.now()-lastPreview>2000)) {
-        lastPreview=performance.now();catalog.papers=rows;preview=true;loading=false;render();loading=true;
+        lastPreview=performance.now();catalog.papers=rows;preview=true;loading=false;render({background:true});loading=true;
       }
     }});
     if (version !== routeVersion) return;
@@ -77,7 +100,9 @@ async function setRoute(allowRefresh = true) {
     }
     loading = false; preview = false;
     $('load-status').textContent = ''; $('results').setAttribute('aria-busy','false');
-    render();
+    if(restoredPage!==null){page=restoredPage;restoredPage=null;}
+    render({background:true});
+    if(restoredScroll!==null){window.scrollTo(0,restoredScroll);restoredScroll=null;}
     clearTimeout(preloadTimer);
     const thisVersion=version;
     preloadTimer=setTimeout(()=>{if(thisVersion===routeVersion)for(const key of Object.keys(sourceNames))if(key!==source)prefetchTarget(key,'all',thisVersion);},1200);
@@ -142,17 +167,20 @@ function renderDirectory() {
   }
 }
 function paperCard(paper, index) {
-  const node = element('article', undefined, 'paper');
+  const node = element('article', undefined, 'paper'); node.dataset.paperId = paper.id;
   const meta = element('div', undefined, 'meta'); meta.append(element('span', `${index}. ${paper.date || (paper.year ? `${paper.year}（仅年份）` : '日期未知')}`), element('span', paper.sources.map(s => sourceNames[s]).join(' / ')),element('span', paper.date_kind || '公开日期')); node.append(meta);
   if (paper.review_status) meta.append(element('span',reviewNames[paper.review_status] || reviewNames.unknown,'review-badge'));
   const meetings = [...new Set((paper.evidence || []).map(e => e.conference).filter(Boolean))];
   if (meetings.length) meta.append(element('span',meetings.join(' / ')));
-  const title = element('h3'); title.append(link(paper.title, paper.evidence?.[0]?.url)); node.append(title);
+  const title = element('h3'), titleLink = element('a',paper.title); titleLink.href=paperHref(paper,loadShards.locationOf(paper.id))+'&from='+encodeURIComponent(location.hash);titleLink.addEventListener('click',saveListState);title.append(titleLink);node.append(title);
   if (paper.authors?.length) node.append(element('p', paper.authors.slice(0,6).join(', ') + (paper.authors.length > 6 ? ' 等' : ''), 'muted'));
   const detail = element('details'); detail.append(element('summary', '摘要与来源详情'), element('p', paper.abstract || '该来源未提供摘要。', 'abstract'));
   for (const item of paper.evidence || []) { const row = element('p', `${item.index_provider || (item.source === 'conferences' ? 'OpenAlex 顶会索引' : sourceNames[item.source])} · ${item.conference || item.venue || '未提供会议信息'} · `); row.append(link('来源原文 ↗', item.url)); detail.append(row); }
+  detail.open=openedPapers.has(paper.id);
+  detail.addEventListener('toggle',()=>{if(!detail.isConnected)return;if(detail.open)openedPapers.add(paper.id);else openedPapers.delete(paper.id);});
   node.append(detail);
   const actions = element('div', undefined, 'links'); actions.append(link('查看原文 ↗', paper.evidence?.[0]?.url)); const pdf = paper.evidence?.find(e => safeLink(e.pdf_url)); if (pdf) actions.append(link('PDF ↗', pdf.pdf_url)); node.append(actions);
+  const original=safeLink(paper.evidence?.[0]?.url);if(original){const row=element('p',undefined,'original-url');row.append(link(original,original));node.append(row);}
   return node;
 }
 function renderStatus() {
@@ -193,8 +221,17 @@ function updateHistoryLabels() {
   $('history').replaceChildren(all,...options);
   $('history').value = selected || Object.keys(counts).filter(d=>d<=today()).sort().at(-1) || today();
 }
-function render() {
+function render({background = false} = {}) {
   if (!catalog || loading) return;
+  if(background && (document.querySelector('#results details[open]') || $('results').contains(document.activeElement))) {
+    $('apply-results').hidden=false;
+    $('load-status').textContent=preview?'后台继续加载中；你正在阅读的列表保持不变。':'加载完成；新结果已就绪，点击“更新列表”后显示。';
+    return;
+  }
+  $('apply-results').hidden=true;
+  for(const node of document.querySelectorAll('#results article[data-paper-id]')) {
+    if(node.querySelector('details')?.open)openedPapers.add(node.dataset.paperId);else openedPapers.delete(node.dataset.paperId);
+  }
   $('error').hidden = true; let papers = [];
   try {
     if (mode === 'search') {
@@ -233,6 +270,7 @@ for (const [key, name] of Object.entries({all:'全部来源',...sourceNames})) {
   card.addEventListener('focus',()=>prefetchTarget(key));
   $('sources').append(card);
 }
+$('apply-results').addEventListener('click',()=>{const pending=loading;loading=false;render();loading=pending;if(!pending)$('load-status').textContent='';});
 $('search-form').addEventListener('submit', event => { event.preventDefault(); page = 1; render(); });
 for (const key of ['start','end','sort']) $(key).addEventListener('change', () => { page = 1; render(); });
 for (const key of ['history','year']) $(key).addEventListener('change',setRoute);
@@ -253,6 +291,7 @@ try {
   $('update').textContent = `论文库更新：${formatted(catalog.updated_at)}（北京时间） · ${catalog.paper_count ?? catalog.papers.length} 篇` + (failed ? ` · ${failed} 个来源未完整更新，详情见来源状态。` : '') + (catalog.notice ? ` · ${catalog.notice}` : '');
   catalog.inline_papers = catalog.papers;
   $('query').value = '';
+  restoreListState();
   setRoute();
 } catch (error) { $('update').textContent = `无法加载论文库：${error.message} 请刷新重试。`; $('error').hidden = false; $('error').textContent = '需通过 HTTP 网页访问，不能直接双击 index.html；可使用 GitHub Pages 或本地预览服务器。'; }
 
@@ -267,7 +306,7 @@ if (location.pathname.startsWith('/library')) {
       const state = await response.json();
       $('sync-library').disabled = state.running;
       $('sync-status').textContent = state.running ? '正在分页采集，本轮完成后自动刷新…' : state.error || '本地论文库 · 每天 09:00 更新，运行期间自动续接历史';
-      if (wasRunning && !state.running && !state.error) location.reload();
+      if (wasRunning && !state.running && !state.error) { $('sync-status').textContent='本地论文库已更新。重新进入专区可读取新数据，当前阅读保持不变。'; }
       wasRunning = state.running;
     } catch { $('sync-status').textContent = '本地服务状态读取失败，请刷新重试。'; }
   };

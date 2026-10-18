@@ -15,16 +15,16 @@ test('group setting changes refresh the web form without overwriting an unsaved 
   await expect(page.getByLabel('推荐研究主题')).toHaveValue('compression');
   saved = { ...saved, topics: ['low rank decomposition'], count: 20 };
   await expect(page.getByLabel('推荐研究主题')).toHaveValue('low rank decomposition', { timeout: 7000 });
-  await expect(page.getByLabel('最多推荐篇数')).toHaveValue('20');
+  await expect(page.getByLabel('推荐篇数（0 = 全部符合条件）')).toHaveValue('20');
   await page.getByLabel('推荐研究主题').fill('my unsaved draft');
   saved = { ...saved, topics: ['quantization'], count: 5 };
   const before = reads;
   await expect.poll(() => reads, { timeout: 7000 }).toBeGreaterThan(before);
   await expect(page.getByLabel('推荐研究主题')).toHaveValue('my unsaved draft');
-  await expect(page.getByLabel('最多推荐篇数')).toHaveValue('20');
+  await expect(page.getByLabel('推荐篇数（0 = 全部符合条件）')).toHaveValue('20');
   await page.reload();
   await expect(page.getByLabel('推荐研究主题')).toHaveValue('quantization');
-  await expect(page.getByLabel('最多推荐篇数')).toHaveValue('5');
+  await expect(page.getByLabel('推荐篇数（0 = 全部符合条件）')).toHaveValue('5');
 });
 
 test('recommendation settings validation, save, mobile readability and service error', async ({ page }) => {
@@ -71,7 +71,7 @@ test('live isolated daily recommendation persists and opens paper details', asyn
   const output = resolve('..', 'output', 'private', 'daily-validation');
   await mkdir(output, { recursive: true });
   await page.screenshot({ path: resolve(output, 'daily-desktop.png'), fullPage: true });
-  await page.locator('.daily-papers .paper-title').first().click();
+  await page.locator('.daily-papers .detail-button').first().click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await expect(page.getByRole('dialog').getByText('来源与时间记录', { exact: true })).toBeVisible();
   await page.keyboard.press('Escape');

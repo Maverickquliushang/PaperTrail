@@ -80,6 +80,8 @@
 | **顶会索引** | 联合会议官网公开清单与 DBLP 历史索引 | 按会议、年份浏览；公开清单可早于正式出版。 |
 | **OpenReview** | 浏览评审平台的论文记录 | 默认已录用，可切换公开投稿；公开不等于已录用。 |
 
+点击论文标题进入 PaperTrail 站内详情页，查看完整摘要、作者与来源时间记录；卡片底部保留“查看原文”和 PDF。阅读已展开摘要时，后台继续加载，但等待点击“更新列表”后才更新眼前的排序。
+
 **会议目录** &nbsp; NeurIPS · ICML · ICLR · CVPR · ICCV · ECCV · ACL · EMNLP · AAAI · IJCAI · KDD
 
 [查看来源接口说明](docs/local/source-apis.md) · [查看网页版采集与覆盖说明](docs/github-pages.md)
@@ -140,7 +142,7 @@ README.md、CHANGELOG.md     项目入口和变更记录
 project-env.ps1             转调 code/ 的便利入口
 ```
 
-当前版本以 `code/local/pyproject.toml` 为准，现为 **0.2.0**；沿用已有 API 版本，统一此前滞后的包元数据，不升级依赖。目录迁移说明见 [结构说明](docs/project-structure.md)，验证与归档见 [版本索引](versions/INDEX.md)。`versions/` 只保存交付快照，不在其中继续开发。
+当前版本以 `code/local/pyproject.toml` 为准，现为 **0.3.0**；本次新增站内论文详情页，依赖版本保持不变。目录迁移说明见 [结构说明](docs/project-structure.md)，验证与归档见 [版本索引](versions/INDEX.md)。`versions/` 只保存交付快照，不在其中继续开发。
 
 从仓库根目录开始开发：
 

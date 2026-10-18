@@ -45,7 +45,7 @@ test('paper, status and detail cards have hover feedback and reduced-motion supp
     await card.hover();
     await expect.poll(() => card.evaluate(e => getComputedStyle(e).transform)).not.toBe('none');
   }
-  await page.getByRole('button', { name: 'Hover example paper', exact: true }).click();
+  await page.getByRole('button', { name: '摘要与来源', exact: true }).click();
   const evidence = page.locator('.evidence-block');
   await evidence.hover();
   await expect.poll(() => evidence.evaluate(e => getComputedStyle(e).transform)).not.toBe('none');
