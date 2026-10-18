@@ -55,7 +55,7 @@ def parse_virtual(payload, name, year, base):
     for row in rows:
         if row.get('visible') is False or not row.get('name') or not row.get('virtualsite_url'):continue
         url=urljoin(base,row['virtualsite_url'])
-        if urlparse(url).netloc!=urlparse(base).netloc:continue
+        if urlparse(url).netloc!=urlparse(base).netloc or f'/virtual/{year}/' not in urlparse(url).path:continue
         paper=row.get('paper_url') or ''
         related=[]
         if urlparse(paper).netloc=='openreview.net':
@@ -89,11 +89,12 @@ def parse_html(body, name, year, base, kind):
             links=Links(block).links
             detail=next((urljoin(base,u) for u,t in links if re.search(r'/proceedings/\d{4}/\d+$',u)),None)
             if title and detail:
+                itemyear=int(re.search(r'/proceedings/(\d{4})/',detail)[1])
                 authors=re.search(r'<div class="authors">(.*?)</div>',block,re.S)
                 number=detail.rsplit('/',1)[-1]
-                records.append(record(name,year,detail,html.unescape(re.sub('<[^>]+>','',title[1])),
+                records.append(record(name,itemyear,detail,html.unescape(re.sub('<[^>]+>','',title[1])),
                     authors=html.unescape(authors[1]).split(', ') if authors else [],
-                    doi=f'10.24963/ijcai.{year}/{number}',pdf_url=next((urljoin(base,u) for u,t in links if t=='PDF'),None)))
+                    doi=f'10.24963/ijcai.{itemyear}/{number}',pdf_url=next((urljoin(base,u) for u,t in links if t=='PDF'),None)))
     elif kind in ('acl','aaai'):
         for u,title in Links(body).links:
             url=urljoin(base,u)
@@ -101,6 +102,7 @@ def parse_html(body, name, year, base, kind):
             if match and len(title)>10 and title.lower() not in ('abstract','download pdf') and not re.search(r'\.0/$',url):
                 records.append(record(name,int(match[1]) if kind=='acl' else year,url,title))
     elif kind=='kdd':
+        if not re.search(rf'KDD[\s-]*{year}',body,re.I):return []
         for match in re.finditer(r'const\s+cycle\d+Papers\s*=\s*',body):
             rows,_=json.JSONDecoder().raw_decode(body[match.end():])
             for row in rows:

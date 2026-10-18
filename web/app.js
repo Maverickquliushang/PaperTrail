@@ -225,7 +225,18 @@ for (const [key, name] of Object.entries({all:'全部来源',...sourceNames})) {
 $('search-form').addEventListener('submit', event => { event.preventDefault(); page = 1; render(); });
 for (const key of ['start','end','sort']) $(key).addEventListener('change', () => { page = 1; render(); });
 for (const key of ['history','year']) $(key).addEventListener('change',setRoute);
-$('retry-load').addEventListener('click',setRoute);
+$('retry-load').addEventListener('click',async()=>{
+  $('retry-load').disabled=true;
+  try {
+    const response=await fetch('./data/catalog.json',{cache:'no-cache'});
+    if(!response.ok)throw new Error('论文库清单读取失败，请稍后重试');
+    const fresh=await response.json();
+    if(fresh.schema!==2 || fresh.mode!=='ai_latest' || !Array.isArray(fresh.papers))throw new Error('论文库清单格式不正确');
+    catalog=fresh;catalog.inline_papers=fresh.papers;
+    await setRoute();
+  } catch(error){$('load-status').textContent=error.message;}
+  finally{$('retry-load').disabled=false;}
+});
 for (const [key, delta] of [['previous',-1],['next',1]]) $(key).addEventListener('click', () => {page += delta; render(); $('result-summary').scrollIntoView({block:'start'});});
 window.addEventListener('hashchange',setRoute);
 try {
