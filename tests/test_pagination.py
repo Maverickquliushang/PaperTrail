@@ -40,6 +40,18 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(done['DBLP:ICML']['history']['scanned'],1235)
             self.assertIn('OFFSET 500',provider.calls[0])
 
+    async def test_transient_failure_can_resume_same_day(self):
+        class Transient(Pages):
+            async def dblp_query(self, query):
+                if 'OFFSET 500' in query: raise ConnectionError('temporary')
+                return await super().dblp_query(query)
+        with patch('scripts.conference_sync.DBLP_STREAMS', {'ICML':'icml'}):
+            records,_,state=await synchronize(Transient(),date(2026,10,18),{})
+            self.assertEqual(len(records),500)
+            more,_,done=await synchronize(Pages(),date(2026,10,18),state)
+            self.assertEqual(len(more),735)
+            self.assertTrue(done['DBLP:ICML']['history']['complete'])
+
     async def test_budget_does_not_advance_unfinished_page(self):
         class Slow(Pages):
             async def dblp_query(self,query):

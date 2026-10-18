@@ -12,6 +12,7 @@ from scripts.public_records import PublicRecord, DBLP_STREAMS
 PREFIX = 'PREFIX dblp: <https://dblp.org/rdf/schema#> '
 METHOD = 'dblp-sparql-offset-v2'
 PAGE_SIZE = 500
+TRANSIENT_NOTE = 'DBLP 分页请求未完成，保留断点稍后重试。'
 
 
 def new_pass(end):
@@ -72,6 +73,8 @@ async def synchronize(provider, end, previous, seconds=600):
         key='DBLP:'+name
         entry=state.setdefault(key,{'method':METHOD,'history':new_pass(end)})
         reports[key]={'conference':name,'index_provider':'DBLP','label':name+' · DBLP','state':'success','count':0,'note':''}
+        if entry.get('error') == TRANSIENT_NOTE:
+            entry.pop('retry_after',None)
         if entry.get('retry_after') and entry['retry_after'] > str(end):
             reports[key].update(state='error',note=entry.get('error','等待来源恢复'))
             continue
@@ -85,7 +88,7 @@ async def synchronize(provider, end, previous, seconds=600):
         name=jobs.pop(0);key='DBLP:'+name
         entry,report=state[key],reports[key]
         if blocked:
-            entry['error']=blocked;report.update(state='error',note=blocked);continue
+            entry['error']=blocked;entry['retry_after']=str(end+timedelta(days=1));report.update(state='error',note=blocked);continue
         job=entry['history']
         try:
             batch,count,total,cursor,complete=await asyncio.wait_for(fetch_page(provider,name,job),max(.001,deadline-time.monotonic()))
@@ -97,13 +100,14 @@ async def synchronize(provider, end, previous, seconds=600):
         except asyncio.TimeoutError:
             break
         except Exception as exc:
-            note=exc.message if isinstance(exc,SourceError) else 'DBLP 分页请求未完成，保留断点稍后重试。'
+            note=exc.message if isinstance(exc,SourceError) else TRANSIENT_NOTE
             entry['error']=note;report.update(state='partial' if report['count'] else 'error',note=note)
-            if isinstance(exc,SourceError) and exc.code in ('access_denied','rate_limited','dblp_unavailable'):blocked=note
+            if isinstance(exc,SourceError) and exc.code in ('access_denied','rate_limited','dblp_unavailable'):
+                blocked=note
+                entry['retry_after']=str(end+timedelta(days=1))
     for key,entry in state.items():
         entry['pending']=not entry['history']['complete']
-        if entry.get('error'):entry['retry_after']=str(end+timedelta(days=1))
-        else:entry.pop('retry_after',None)
+        if not entry.get('error'):entry.pop('retry_after',None)
         reports[key]['progress']=entry
         if not entry.get('error'):
             reports[key]['note']='本轮 DBLP 历史索引已遍历。' if not entry['pending'] else 'DBLP 历史分页进行中，保存断点后自动续采；不设收录篇数上限。'
