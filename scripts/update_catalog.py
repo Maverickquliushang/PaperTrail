@@ -141,7 +141,7 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
             "conference_sync": getattr(providers, "conference_state", {}),
             "papers": papers, "source_status": statuses,
             "recommendations": recommendations, "history": history,
-            "notice": "公共 AI 论文库，检索不设统一起始日期；会议论文分页累计收录，无总篇数上限；非全站实时搜索。每日推荐仅选来源标注日期为当天的论文，符合条件的已收录论文全部展示；无结果不以旧论文补足。"}
+            "notice": "公共 AI 论文库，检索不设统一起始日期；会议论文分页累计收录，无总篇数上限；非全站实时搜索。每日推荐按来源日期浏览累计论文库，支持全部日期与各日篇数；仅年份记录不参与每日列表。"}
 
 
 async def main():

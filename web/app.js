@@ -1,14 +1,16 @@
+import {dailyArchive} from './daily.js';
 import {sourceNames, translateQuery, search, sortPapers, safeLink, conferenceNames, reviewNames, dblpStreams, scopedPapers} from './search.js';
 const $ = id => document.getElementById(id);
 const descriptions = {all:'浏览全部已采集来源',arxiv:'追踪各学科的预印本研究',openalex:'学术文献索引与发表信息',huggingface:'社区收录的机器学习论文',conferences:'11 个会议的论文集索引',openreview:'已录用论文与公开投稿分开浏览'};
 let routeVersion = 0, loading = false;
 const shardCache = new Map();
+let daily = {days: new Map(), all: []};
 let catalog, terms, page = 1, source = 'all', mode = 'search', conference = 'all', review = 'accepted';
 function element(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function link(text, href) { const node = element('a', text); const safe = safeLink(href); if (safe) { node.href = safe; node.target = '_blank'; node.rel = 'noopener noreferrer'; } return node; }
 function formatted(value) { return value ? new Date(value).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}) : '尚无成功更新'; }
-async function loadPapers(wantedSource, wantedConference) {
-  const shards = (catalog.paper_shards || []).filter(s => (wantedSource === 'all' || s.sources.includes(wantedSource)) && (wantedSource !== 'conferences' || wantedConference === 'all' || s.conferences.includes(wantedConference)));
+async function loadPapers(wantedSource, wantedConference, datedOnly = false) {
+  const shards = (catalog.paper_shards || []).filter(s => (!datedOnly || s.dated_count !== 0) && (wantedSource === 'all' || s.sources.includes(wantedSource)) && (wantedSource !== 'conferences' || wantedConference === 'all' || s.conferences.includes(wantedConference)));
   let cursor = 0;
   await Promise.all(Array.from({length:Math.min(4,shards.length)},async () => {
     while (cursor < shards.length) {
@@ -37,14 +39,18 @@ async function setRoute() {
   for (const node of $('modes').children) { node.href = `#/${source}/${node.dataset.mode}${suffix}`; node.classList.toggle('active', node.dataset.mode === mode); }
   $('search-form').hidden = mode !== 'search'; $('start-wrap').hidden = mode !== 'search'; $('end-wrap').hidden = mode !== 'search'; $('history-wrap').hidden = mode !== 'daily';
   renderDirectory();
-  updateHistoryLabels();
   loading = true;
   $('results').replaceChildren(element('p','正在加载已收录论文…'));
   $('result-summary').textContent = '';
   try {
-    const loaded = mode === 'search' ? await loadPapers(source,conference) : [];
+    const loaded = await loadPapers(source,conference,mode === 'daily');
     if (version !== routeVersion) return;
     catalog.papers = loaded;
+    if (mode === 'daily') {
+      const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+      daily = dailyArchive(loaded,catalog.history,source,conference,review,today);
+      updateHistoryLabels();
+    }
     loading = false;
     render();
   } catch (error) {
@@ -125,12 +131,7 @@ function emptyMessage() {
   if (!$('error').hidden) return '筛选条件无效，请按上方提示调整后重试。';
   const keys = Object.keys(sourceNames).filter(key => source === 'all' || key === source);
   if (mode === 'daily') {
-    const day = catalog.history.find(h => h.date === $('history').value);
-    if (!day) return '暂无已生成的每日推荐记录。请查看来源状态和最近更新时间。';
-    const failed = keys.filter(key => ['error','partial'].includes(key === 'openreview' && review === 'public' ? (day.openreview_public?.state || 'error') : day.recommendations?.[key]?.state));
-    return failed.length
-      ? `所选日期暂无可显示推荐；${failed.map(key => sourceNames[key]).join('、')}采集未完成，不能据此判断当天没有论文。可切换“论文检索”查看已收录内容。`
-      : '所选日期未收录符合当日日期条件的论文，不用旧论文补足。可切换“论文检索”浏览近期论文。';
+    return '所选日期暂无已收录论文。可选择其他日期或“全部日期”；没有结果不代表来源当天没有论文。只有年份的记录请在“论文检索”中查看。';
   }
   const available = scopedPapers(catalog.papers, source, conference, review);
   if (available.length) return '已收录论文中没有匹配当前关键词或日期的结果。可清空关键词或放宽筛选日期；筛选不会向来源实时取数。';
@@ -143,18 +144,17 @@ function emptyMessage() {
     (source === 'conferences' ? ' 顶会专区按 DBLP 会议索引收录；可用上方 DBLP 目录查看其他年份，收录不保证完整。' : '') +
     ' 可切换“全部来源”浏览其他已收录论文。';
 }
-function dailyPapers(day) {
-  const entries = source === 'openreview' && review === 'public' ? [['openreview',day?.openreview_public || {state:'error',papers:[]}]] : Object.entries(day?.recommendations || {}).filter(([key]) => source === 'all' || key === source);
-  const papers = scopedPapers([...new Map(entries.flatMap(([,item]) => item.papers).map(p => [p.id,p])).values()],source,conference,review);
-  return {entries,papers};
-}
 function updateHistoryLabels() {
-  for (const option of $('history').options) {
-    const day = catalog.history.find(h => h.date === option.value);
-    const {entries,papers} = dailyPapers(day);
-    const incomplete = entries.some(([,item]) => item.state !== 'success');
-    option.textContent = `${option.value} · ${papers.length} 篇${incomplete ? '（采集未完整）' : ''}`;
+  const selected = $('history').value;
+  const dates = new Set([...daily.days.keys(), ...(catalog.history || []).map(h => h.date)]);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(selected)) dates.add(selected);
+  $('history').replaceChildren();
+  const all = element('option',`全部日期 · ${daily.all.length} 篇`); all.value = 'all'; $('history').append(all);
+  for (const date of [...dates].sort().reverse()) {
+    const option = element('option',`${date} · ${daily.days.get(date)?.length || 0} 篇`);
+    option.value = date; $('history').append(option);
   }
+  $('history').value = selected || daily.days.keys().next().value || 'all';
 }
 function render() {
   if (!catalog || loading) return;
@@ -166,11 +166,13 @@ function render() {
       papers = search(scopedPapers(catalog.papers, source, conference, review), query, {source, start:$('start').value,end:$('end').value,sort:$('sort').value});
       $('query-note').textContent = query ? `实际关键词：${query}。在已收录标题与摘要中匹配全部关键词；可选 BM25 排序。` : '正在浏览累计收录的论文，不设统一起始日期。可自行筛选日期；只有年份的记录不参与精确日期筛选。搜索不会向来源实时取数。';
     } else {
-      const day = catalog.history.find(h => h.date === $('history').value);
-      const entries = (source === 'openreview' && review === 'public' ? [['openreview',day?.openreview_public || {state:'error',papers:[]}]] : Object.entries(day?.recommendations || {}).filter(([key]) => source === 'all' || key === source));
-      papers = sortPapers(scopedPapers([...new Map(entries.flatMap(([, item]) => item.papers).map(p => [p.id,p])).values()], source, conference, review), $('sort').value);
-      const failures = entries.filter(([,item]) => item.state !== 'success').map(([key]) => sourceNames[key]);
-      $('query-note').textContent = `AI 当日论文：仅选来源标注日期为 ${$('history').value} 的论文，符合条件的已收录论文全部展示，综合视图合并去重。${source === 'openreview' && review === 'public' ? ' 公开投稿不代表已录用或质量认可。' : ''}` + (failures.length ? ` 该日未完整采集：${failures.join('、')}。已有内容请结合日期查看。` : '');
+      const selected = $('history').value;
+      papers = sortPapers(selected === 'all' ? daily.all : daily.days.get(selected) || [], $('sort').value);
+      $('query-note').textContent = (selected === 'all'
+        ? '全部日期：展示当前专区所有有明确日期的已收录论文，跨日期按论文标识去重。'
+        : `日期 ${selected}：展示来源标注为该日的全部已收录论文。`)
+        + ' 日期列表来自累计论文库，不限于生成过推荐的日期，也不设 30 天窗口；数量为已收录数，不代表来源当日总量。'
+        + (source === 'openreview' && review === 'public' ? ' 公开投稿不代表已录用。' : '');
     }
   } catch (error) { $('error').textContent = error.message; $('error').hidden = false; }
   const pages = Math.max(1, Math.ceil(papers.length / 10)); page = Math.min(page, pages);
@@ -196,7 +198,6 @@ try {
   if (catalog.schema !== 2 || catalog.mode !== 'ai_latest' || !Array.isArray(catalog.papers)) throw new Error('论文库格式不正确。');
   const failed = Object.values(catalog.source_status).filter(s => s.state !== 'success').length;
   $('update').textContent = `论文库更新：${formatted(catalog.updated_at)}（北京时间） · ${catalog.paper_count ?? catalog.papers.length} 篇` + (failed ? ` · ${failed} 个来源未完整更新，详情见来源状态。` : '') + (catalog.notice ? ` · ${catalog.notice}` : '');
-  for (const entry of [...catalog.history].reverse()) { const option = element('option',entry.date); option.value = entry.date; $('history').append(option); }
   catalog.inline_papers = catalog.papers;
   $('query').value = '';
   setRoute();

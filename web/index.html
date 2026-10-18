@@ -20,7 +20,7 @@
       <form id="search-form" autocomplete="off"><label for="query">关键词（可选）</label><div class="search-row"><input id="query" type="search" placeholder="留空浏览最新 AI 论文，或输入关键词" maxlength="250"><button type="submit">检索论文 →</button></div><p class="muted">已收录论文的标题与摘要检索；支持常用中文术语转换。留空可浏览全部。</p></form>
       <div class="filters">
         <label id="start-wrap">开始日期<input id="start" type="date"></label><label id="end-wrap">结束日期<input id="end" type="date"></label>
-        <label id="history-wrap" hidden>推荐日期<select id="history"></select></label>
+        <label id="history-wrap" hidden>论文日期<select id="history"></select></label>
         <label>列表排序<select id="sort"><option value="date_desc">日期从新到旧</option><option value="date_asc">日期从旧到新</option><option value="relevance">BM25 相关性（检索）</option><option value="title">标题字母顺序</option></select></label>
       </div>
       <p id="query-note" class="muted" role="status"></p><p id="error" class="error" role="alert" hidden></p>
@@ -28,7 +28,7 @@
       <div id="result-summary" aria-live="polite"></div><div id="results"></div>
       <nav class="pagination" aria-label="结果翻页"><button id="previous" type="button">← 上一页</button><span id="page-label"></span><button id="next" type="button">下一页 →</button></nav>
     </section>
-    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期；OpenReview 已录用使用录用日期，其他公开投稿使用创建日期；DBLP 仅提供年份时不补造月日。每日推荐仅收录标注日期为当天的论文，不限制展示篇数。</footer>
+    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期；OpenReview 已录用使用录用日期，其他公开投稿使用创建日期；DBLP 仅提供年份时不补造月日。每日推荐可回看各日已收录论文，支持全部日期，不限制展示篇数。</footer>
   </main>
 </body>
 </html>

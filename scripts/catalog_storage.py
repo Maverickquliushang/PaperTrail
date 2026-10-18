@@ -61,6 +61,7 @@ def write_catalog(path, value):
             expected.add(name)
             shards.append({'file': 'papers/' + name, 'count': len(batch),
                            'sources': sorted({s for p in batch for s in p['sources']}),
+                           'dated_count': sum(any(e.get('submitted_date') if e['source'] == 'arxiv' else e.get('publication_date') for e in p['evidence']) for p in batch),
                            'conferences': sorted({e['conference'] for p in batch for e in p['evidence'] if e.get('conference') and e['source'] == 'conferences'})})
     manifest = {**value, 'papers': [], 'paper_count': len(papers), 'paper_shards': shards}
     temporary = path.with_suffix('.tmp')
