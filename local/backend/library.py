@@ -55,7 +55,7 @@ class LibraryService:
         daily_due = today.hour >= 9 and not any(h['date'] == str(today.date()) for h in value.get('history', []))
         if not value.get('updated_at') or daily_due:
             self.start()
-        elif needs_backfill(value.get('conference_sync', {}), today.date()):
+        elif needs_backfill({**value.get('conference_sync', {}), **value.get('source_sync', {})}, today.date()):
             self.start(backfill_only=True)
 
     async def close(self):
