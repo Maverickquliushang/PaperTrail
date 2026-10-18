@@ -3,12 +3,15 @@ on:
   pull_request:
   push:
     branches: [main]
-    paths-ignore: ['web/data/catalog.json', '**/*.md']
+    paths-ignore: ['code/web/data/**', '**/*.md']
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: code
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
@@ -24,8 +27,8 @@ jobs:
       - run: |
           mkdir -p .tmp
           uv run --locked python -m pytest -q --basetemp .tmp/pytest
-        working-directory: local
+        working-directory: code/local
       - run: npm ci
-        working-directory: local/frontend
+        working-directory: code/local/frontend
       - run: npm run build
-        working-directory: local/frontend
+        working-directory: code/local/frontend
