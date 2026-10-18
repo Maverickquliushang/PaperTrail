@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="460" viewBox="0 0 1280 460" role="img" aria-labelledby="title desc">
+  <title id="title">PaperTrail · 论文踪迹</title>
+  <desc id="desc">从一个问题，发现新的论文线索。奶油白与森林绿的原创插画，用一条路径连接检索、论文与每日发现。</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#dce3d4" stroke-width=".7"/></pattern>
+  </defs>
+  <rect width="1280" height="460" rx="24" fill="#f4f5ee"/>
+  <rect x="740" width="540" height="460" rx="24" fill="url(#grid)"/>
+  <path d="M40 34H1240" stroke="#d5dfcd"/>
+  <g font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif">
+    <text x="64" y="89" fill="#657e69" font-size="16" letter-spacing="4">FOLLOW THE PAPER TRAIL</text>
+    <text x="60" y="182" fill="#23493b" font-size="78" font-weight="700" letter-spacing="-3">PaperTrail</text>
+    <text x="65" y="233" fill="#335e49" font-size="28" letter-spacing="7">论文踪迹</text>
+    <text x="64" y="298" fill="#354d43" font-size="25">从一个问题，发现新的论文线索。</text>
+    <rect x="64" y="341" width="152" height="39" rx="19.5" fill="#335e49"/>
+    <text x="140" y="367" text-anchor="middle" fill="#fff" font-size="17">多源论文检索</text>
+    <rect x="228" y="341" width="118" height="39" rx="19.5" fill="#e5eadb"/>
+    <text x="287" y="367" text-anchor="middle" fill="#335e49" font-size="17">每日发现</text>
+    <rect x="358" y="341" width="152" height="39" rx="19.5" fill="#e5eadb"/>
+    <text x="434" y="367" text-anchor="middle" fill="#335e49" font-size="17">一个项目 · 两版</text>
+  </g>
+  <path d="M755 355C645 355 694 175 824 187S933 390 1062 322 1194 172 1150 102" fill="none" stroke="#96ab84" stroke-width="3" stroke-dasharray="7 9"/>
+  <g transform="translate(796 83) rotate(-9 100 130)">
+    <rect x="8" y="9" width="200" height="254" rx="15" fill="#dce3d4"/>
+    <rect width="200" height="254" rx="15" fill="#fffef9" stroke="#b8c8aa" stroke-width="2"/>
+    <path d="M28 36H80" stroke="#ad6748" stroke-width="6" stroke-linecap="round"/>
+    <path d="M28 68H170M28 88H145" stroke="#335e49" stroke-width="9" stroke-linecap="round"/>
+    <path d="M28 122H170M28 140H160M28 158H170M28 176H129" stroke="#d4ddcd" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="42" cy="218" r="13" fill="#335e49"/>
+    <path d="m36 218 4 4 8-9" fill="none" stroke="#fff" stroke-width="2.5"/>
+    <path d="M69 218H147" stroke="#d4ddcd" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(1030 242) rotate(8 75 65)">
+    <rect x="5" y="6" width="160" height="125" rx="15" fill="#dce3d4"/>
+    <rect width="160" height="125" rx="15" fill="#335e49"/>
+    <circle cx="29" cy="30" r="6" fill="#c8ae61"/>
+    <text x="47" y="36" fill="#dfe8d7" font-family="Segoe UI, sans-serif" font-size="13" letter-spacing="2">DISCOVER</text>
+    <path d="M26 62H132M26 78H119M26 94H88" stroke="#a4ba9c" stroke-width="5" stroke-linecap="round"/>
+  </g>
+  <circle cx="746" cy="355" r="9" fill="#ad6748"/>
+  <circle cx="1149" cy="99" r="14" fill="#f4f5ee" stroke="#335e49" stroke-width="3"/>
+  <path d="m1144 100 4 4 8-10" fill="none" stroke="#335e49" stroke-width="2.5"/>
+  <path d="M40 421H1240" stroke="#d5dfcd"/>
+</svg>
