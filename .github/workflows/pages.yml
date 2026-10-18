@@ -87,6 +87,7 @@ jobs:
           npm test
           uv run --project local --locked python -m unittest discover -s tests -p 'test_*.py'
           cd local
+          mkdir -p .tmp
           uv run --locked python -m pytest -q --basetemp .tmp/pytest
           cd frontend
           npm ci --no-fund --no-audit
