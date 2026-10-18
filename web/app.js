@@ -20,7 +20,7 @@ function prepareYears() {
   const years = Object.keys(counts).sort().reverse();
   const all = element('option','全部年份'); all.value = '';
   $('year').replaceChildren(all,...years.map(year => {const o=element('option',`${year} 年 · ${counts[year]} 篇`);o.value=year;return o;}));
-  $('year').value = previous && years.includes(previous) ? previous : !initialized && mode === 'daily' ? years[0] || '' : '';
+  $('year').value = previous && years.includes(previous) ? previous : previous || !initialized && mode === 'daily' ? years[0] || '' : '';
 }
 function prefetchTarget(target, meeting = 'all', version = routeVersion) {
   if (!catalog || navigator.connection?.saveData) return;
@@ -29,7 +29,14 @@ function prefetchTarget(target, meeting = 'all', version = routeVersion) {
   const year = target === 'conferences' ? $('year').value : '';
   loadShards(selectShards(catalog,{source:target,conference:meeting,date,year,datedOnly:mode === 'daily' && target !== 'conferences'}).slice(0,2),{concurrency:1,active:()=>version===routeVersion}).catch(()=>{});
 }
-async function setRoute() {
+async function refreshCatalog() {
+  const response=await fetch('./data/catalog.json',{cache:'no-cache'});
+  if(!response.ok)throw new Error('论文库清单读取失败，请稍后重试');
+  const fresh=await response.json();
+  if(fresh.schema!==2 || fresh.mode!=='ai_latest' || !Array.isArray(fresh.papers))throw new Error('论文库清单格式不正确');
+  catalog=fresh;catalog.inline_papers=fresh.papers;
+}
+async function setRoute(allowRefresh = true) {
   if (!catalog) return;
   const version = ++routeVersion;
   const parts = location.hash.slice(2).split('/');
@@ -76,6 +83,10 @@ async function setRoute() {
     preloadTimer=setTimeout(()=>{if(thisVersion===routeVersion)for(const key of Object.keys(sourceNames))if(key!==source)prefetchTarget(key,'all',thisVersion);},1200);
   } catch (error) {
     if (version !== routeVersion) return;
+    if(error.status===404 && allowRefresh!==false){
+      try {await refreshCatalog();if(version!==routeVersion)return;return await setRoute(false);}
+      catch(refreshError){error=refreshError;}
+    }
     loading = false;
     $('load-status').textContent = error.message; $('retry-load').hidden = false; $('results').setAttribute('aria-busy','false');
     $('results').replaceChildren(element('p',error.message,'error'));
@@ -228,11 +239,7 @@ for (const key of ['history','year']) $(key).addEventListener('change',setRoute)
 $('retry-load').addEventListener('click',async()=>{
   $('retry-load').disabled=true;
   try {
-    const response=await fetch('./data/catalog.json',{cache:'no-cache'});
-    if(!response.ok)throw new Error('论文库清单读取失败，请稍后重试');
-    const fresh=await response.json();
-    if(fresh.schema!==2 || fresh.mode!=='ai_latest' || !Array.isArray(fresh.papers))throw new Error('论文库清单格式不正确');
-    catalog=fresh;catalog.inline_papers=fresh.papers;
+    await refreshCatalog();
     await setRoute();
   } catch(error){$('load-status').textContent=error.message;}
   finally{$('retry-load').disabled=false;}
