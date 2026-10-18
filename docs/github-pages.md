@@ -76,7 +76,7 @@ DBLP 仅有年份的记录显示“年份（仅年份）”，不补造日期；
 
 ## 历史补采与增量更新
 
-会议收录总数无上限。DBLP 官方 SPARQL 接口 `https://sparql.dblp.org/sparql` 每页 500 条，按稳定论文标识使用 keyset 分页。只查询指定会议流中的 Inproceedings，并排除明确标注的 workshop / Findings 等。顶会历史库不再请求 OpenAlex，不需要 OpenAlex Key；单独的 OpenAlex AI 专区仍是独立来源。
+会议收录总数无上限。DBLP 官方 SPARQL 接口 `https://sparql.dblp.org/sparql` 每页 500 条，按来源的论文标识排序、使用 OFFSET 分页，避免用本地字符串规则比较来源游标。只查询指定会议流中的 Inproceedings，并排除明确标注的 workshop / Findings 等。顶会历史库不再请求 OpenAlex，不需要 OpenAlex Key；单独的 OpenAlex AI 专区仍是独立来源。
 
 每轮最多运行 10 分钟以留出保存和部署时间，各会议轮流读取一页，已完成页面和断点共同保存。来源返回限流或访问错误时暂停后次日重试。每天 09:00 分页检查 DBLP 索引并按唯一标识增量合并；DBLP 没有在这里提供变更流，因此扫描到已收录论文时更新元数据，新标识才增加收录数量，不把重扫说成新增。当前图谱遍历完成不代表会议官网全集。
 

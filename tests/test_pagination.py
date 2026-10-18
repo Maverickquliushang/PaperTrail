@@ -20,8 +20,8 @@ class Pages:
         self.calls.append(query)
         if 'COUNT(' in query:return {'results':{'bindings':[{'count':{'value':'1235'}}]}}
         import re
-        match=re.search(r'FILTER\(STR\(\?paper\) > "https://dblp.org/rec/conf/icml/p(\d+)"',query)
-        start=int(match[1])+1 if match else 0
+        match=re.search(r'OFFSET (\d+)',query)
+        start=int(match[1]) if match else 0
         if start==self.fail:raise SourceError('rate_limited','limited')
         rows=[{'paper':{'value':f'https://dblp.org/rec/conf/icml/p{i:05}'},'title':{'value':f'Paper {i}'},'year':{'value':'2010'}} for i in range(start,min(start+500,1235))]
         return {'results':{'bindings':rows}}
@@ -38,7 +38,7 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(more),735)
             self.assertTrue(done['DBLP:ICML']['history']['complete'])
             self.assertEqual(done['DBLP:ICML']['history']['scanned'],1235)
-            self.assertIn('00499',provider.calls[0])
+            self.assertIn('OFFSET 500',provider.calls[0])
 
     async def test_budget_does_not_advance_unfinished_page(self):
         class Slow(Pages):

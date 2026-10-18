@@ -10,7 +10,7 @@ from backend.sources import SourceError, doi_id, safe_url
 from scripts.public_records import PublicRecord, DBLP_STREAMS
 
 PREFIX = 'PREFIX dblp: <https://dblp.org/rdf/schema#> '
-METHOD = 'dblp-sparql-v1'
+METHOD = 'dblp-sparql-offset-v2'
 PAGE_SIZE = 500
 
 
@@ -32,14 +32,11 @@ async def fetch_page(provider, name, job):
     if total is None:
         result = await provider.dblp_query(PREFIX + 'SELECT (COUNT(DISTINCT ?paper) AS ?count) WHERE {' + pattern + '}')
         total = int(result['results']['bindings'][0]['count']['value'])
-    cursor = job['cursor']
-    if cursor and not re.fullmatch(r'https://dblp\.org/rec/[A-Za-z0-9_./()-]+',cursor):
-        raise SourceError('invalid_cursor','DBLP 断点格式异常，未执行查询。')
-    after = 'FILTER(STR(?paper) > ' + json.dumps(cursor) + ')' if cursor else ''
+    offset = job['scanned']
     query = PREFIX + f'''
 SELECT ?paper (SAMPLE(?t) AS ?title) (SAMPLE(?y) AS ?year) (SAMPLE(?v) AS ?venue)
  (SAMPLE(?url) AS ?link) (GROUP_CONCAT(DISTINCT ?name; separator="|") AS ?authors)
-WHERE {{ {{ SELECT DISTINCT ?paper WHERE {{ {pattern} {after} }} ORDER BY ?paper LIMIT {PAGE_SIZE} }}
+WHERE {{ {{ SELECT DISTINCT ?paper WHERE {{ {pattern} }} ORDER BY ?paper LIMIT {PAGE_SIZE} OFFSET {offset} }}
  ?paper dblp:title ?t; dblp:yearOfPublication ?y .
  OPTIONAL {{ ?paper dblp:publishedIn ?v }} OPTIONAL {{ ?paper dblp:primaryDocumentPage ?url }}
  OPTIONAL {{ ?paper dblp:authoredBy ?author . ?author dblp:primaryCreatorName ?name }}
@@ -50,7 +47,7 @@ WHERE {{ {{ SELECT DISTINCT ?paper WHERE {{ {pattern} {after} }} ORDER BY ?paper
     for row in rows:
         get = lambda key: row.get(key,{}).get('value','')
         identifier = get('paper')
-        if not identifier.startswith('https://dblp.org/rec/') or (cursor and identifier <= cursor):
+        if not identifier.startswith('https://dblp.org/rec/'):
             raise SourceError('invalid_page','DBLP 分页没有向前推进，保留断点等待重试。')
         ids.append(identifier)
         records.append(PublicRecord(source='conferences',source_id='dblp:'+identifier.split('/rec/',1)[1],
@@ -63,7 +60,7 @@ WHERE {{ {{ SELECT DISTINCT ?paper WHERE {{ {pattern} {after} }} ORDER BY ?paper
     # The graph can change during a crawl; an unexpectedly short scan must not be called complete.
     if complete and job['scanned']+len(ids) < total:
         raise SourceError('incomplete_snapshot','DBLP 索引在采集中变化，保留断点稍后核对。')
-    return records,len(ids),total,max(ids) if ids else cursor,complete
+    return records,len(ids),total,ids[-1] if ids else job['cursor'],complete
 
 
 async def synchronize(provider, end, previous, seconds=600):
