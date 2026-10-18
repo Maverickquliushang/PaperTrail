@@ -26,17 +26,19 @@ def test_openreview_acceptance_and_dates_are_not_submission_or_workshop():
     assert parse_openreview({"notes": [note("ICLR.cc/2025/Conference")]}, now(), ["ICLR"])[0].publication_date is None
 
 
-async def test_conference_query_uses_curated_ids_and_shares_openalex_auth():
+async def test_conference_query_uses_dblp_without_openalex_credentials():
     def handler(request):
-        assert request.headers["Authorization"] == "Bearer private-key"
-        assert "primary_location.source.id:S4210176548" in request.url.params["filter"]
-        assert "from_publication_date:2025-01-01" in request.url.params["filter"]
-        return httpx.Response(200, json={"results": [{"id": "https://openalex.org/W1", "title": "Paper", "publication_date": "2025-06-01", "primary_location": {"source": {"id": "https://openalex.org/S4210176548", "display_name": "CVPR"}}}], "meta": {"count": 1}})
+        assert request.url.host == 'sparql.dblp.org'
+        assert 'Authorization' not in request.headers
+        assert 'streams/conf/cvpr' in request.url.params['query']
+        return httpx.Response(200,json={'results':{'bindings':[{
+            'paper':{'value':'https://dblp.org/rec/conf/cvpr/test'},
+            'title':{'value':'Test paper'},'year':{'value':'2025'},'conference':{'value':'CVPR'}}]}})
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        providers = Providers(client, "private-key")
-        data = await providers.search("conferences", SearchRequest(query="test", conferences=["CVPR"], start_date="2025-01-01"))
-        assert data.records[0].conference == "CVPR" and data.records[0].source == "conferences"
-        assert providers.locks["openalex"] is providers.locks["conferences"]
+        data=await Providers(client,'private-key').search('conferences',SearchRequest(query='test',conferences=['CVPR']))
+        assert data.records[0].conference=='CVPR'
+        assert data.records[0].publication_year==2025
+        assert data.records[0].publication_date is None
 
 
 def test_conference_index_does_not_double_count_openalex():

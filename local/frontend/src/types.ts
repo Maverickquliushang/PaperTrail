@@ -5,7 +5,7 @@ export const sourceDescriptions: Record<Source, string> = {
   arxiv: '预印本 · 首次提交日期',
   openalex: '学术索引 · 发表日期',
   huggingface: '社区论文 · 候选内日期筛选',
-  conferences: 'OpenAlex 会议论文集 · 覆盖有限',
+  conferences: 'DBLP 会议索引 · 年份信息',
   openreview: 'ICLR / ICML / NeurIPS · 已录用主会',
 };
 export interface SearchRequest {
@@ -28,6 +28,8 @@ export interface Evidence {
   pdf_url: string | null;
   venue: string | null;
   conference?: string | null;
+  publication_year?: number | null;
+  index_provider?: string | null;
   publication_date: string | null;
   submitted_date: string | null;
   updated_date: string | null;
@@ -42,6 +44,7 @@ export interface Paper {
   authors: string[];
   abstract: string | null;
   abstract_source: Source | null;
+  year?: number | null;
   date: string | null;
   date_kind: string;
   date_source: Source;

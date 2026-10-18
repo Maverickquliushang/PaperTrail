@@ -16,7 +16,7 @@ from .sources import Providers, SourceError, effective_end_date
 
 def identities(record: Record) -> set[str]:
     result = {f"{record.source}:{record.source_id}"}
-    if record.source == "conferences":
+    if record.source == "conferences" and record.index_provider != "DBLP":
         result.add(f"openalex:{record.source_id}")
     if record.doi:
         result.add(f"doi:{record.doi}")
@@ -58,7 +58,7 @@ def merge_records(records: list[Record], sort: str) -> list[dict]:
         # The conference channel uses OpenAlex too: do not count it as independent evidence.
         families = {}
         for record in members:
-            family = "openalex" if record.source == "conferences" else record.source
+            family = ("dblp" if record.index_provider == "DBLP" else "openalex") if record.source == "conferences" else record.source
             families[family] = min(families.get(family, record.rank), record.rank)
         score = sum(1 / (60 + rank) for rank in families.values())
         papers.append({
@@ -66,7 +66,8 @@ def merge_records(records: list[Record], sort: str) -> list[dict]:
             "authors": next((r.authors for r in members if r.authors), []),
             "abstract": abstract_record.abstract if abstract_record else None,
             "abstract_source": abstract_record.source if abstract_record else None,
-            "date": primary.filter_date, "date_kind": "首次提交" if primary.source == "arxiv" else "公开日期" if primary.source == "openreview" else "发表日期",
+            "year": primary.publication_year,
+            "date": primary.filter_date, "date_kind": "仅年份" if primary.publication_year and not primary.filter_date else "首次提交" if primary.source == "arxiv" else "公开日期" if primary.source == "openreview" else "发表日期",
             "date_source": primary.source,
             "doi": next((r.doi for r in members if r.doi), None),
             "arxiv_id": next((r.arxiv_id for r in members if r.arxiv_id), None),

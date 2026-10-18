@@ -86,6 +86,8 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
             r = PublicRecord.model_validate(evidence)
             if r.source == "openreview" and not r.review_status:
                 r.review_status = "accepted"  # Earlier catalogs only collected accepted papers.
+            if r.source == "conferences" and r.index_provider != "DBLP":
+                continue  # Conference catalog now uses DBLP exclusively.
             if r.source in config["sources"] and eligible(r, today):
                 retained[(r.source, r.source_id)] = r
     for r in fresh:

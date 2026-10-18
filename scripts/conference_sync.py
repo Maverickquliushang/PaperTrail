@@ -1,126 +1,117 @@
-"""Resumable, fair pagination. Page size is a transport setting, never a corpus cap."""
+"""DBLP official knowledge-graph pagination, with durable per-conference checkpoints."""
 import asyncio
 import copy
 import json
+import re
 import time
 from datetime import date, timedelta
-
-from backend.conferences import CONFERENCE_SOURCES
 from backend.models import now
-from backend.sources import SourceError, parse_openalex
-from scripts.public_records import PublicRecord, DBLP_STREAMS, parse_dblp
+from backend.sources import SourceError, doi_id, safe_url
+from scripts.public_records import PublicRecord, DBLP_STREAMS
+
+PREFIX = 'PREFIX dblp: <https://dblp.org/rdf/schema#> '
+METHOD = 'dblp-sparql-v1'
+PAGE_SIZE = 500
 
 
-def new_pass(end, start=None):
-    return {'end': str(end), 'start': start, 'cursor': '*', 'offset': 0,
-            'scanned': 0, 'pages': 0, 'total': None, 'complete': False}
+def new_pass(end):
+    return {'end':str(end), 'cursor':'', 'scanned':0, 'pages':0, 'total':None, 'complete':False}
 
 
-async def fetch_page(provider, index, name, job):
-    if index == 'OpenAlex':
-        identifiers = CONFERENCE_SOURCES[name]
-        filters = f'primary_location.source.id:{"|".join(identifiers)},to_publication_date:{job["end"]}'
-        if job.get('start'):
-            filters += ',from_publication_date:' + job['start']
-        payload = json.loads(await provider.request('conferences', 'https://api.openalex.org/works', {
-            'filter': filters, 'sort': 'publication_date:asc', 'per_page': 100, 'cursor': job['cursor']}))
-        parsed, total = parse_openalex(payload, now())
-        records = []
-        for r, item in zip(parsed, payload['results']):
-            source_id = ((item.get('primary_location') or {}).get('source') or {}).get('id', '').rsplit('/', 1)[-1]
-            if source_id in identifiers and (not r.filter_date or r.filter_date <= job['end']):
-                r.source, r.conference = 'conferences', name
-                records.append(PublicRecord(**r.model_dump(), index_provider='OpenAlex'))
-        cursor = payload.get('meta', {}).get('next_cursor')
-        count = len(payload['results'])
-        # A malformed page must not silently terminate a nonempty crawl.
-        if count and (cursor == job['cursor'] or ('next_cursor' not in payload.get('meta', {}))):
-            raise SourceError('invalid_cursor', '分页游标缺失或重复，保留断点等待重试。')
-        if not count and job['scanned'] < total:
-            raise SourceError('invalid_page', '来源提前返回空页，保留断点，不标记补采完成。')
-        return records, count, total, cursor, not cursor
-    payload = await provider.dblp_body({'q': f'stream:conf/{DBLP_STREAMS[name]}:',
-                                      'format': 'json', 'h': 1000, 'f': job['offset']})
-    records, total = parse_dblp(payload, name, now(), date.fromisoformat(job['end']).year)
-    hits = payload['result']['hits'].get('hit', [])
-    count = len(hits) if isinstance(hits, list) else 1
-    if not count and job['offset'] < total:
-        raise SourceError('invalid_page', 'DBLP 提前返回空页，保留断点等待重试。')
-    return records, count, total, None, job['offset'] + count >= total
+def base_pattern(name, year):
+    stream = DBLP_STREAMS[name]
+    return f'''?paper a dblp:Inproceedings; dblp:publishedInStream <https://dblp.org/streams/conf/{stream}>;
+      dblp:yearOfPublication ?year . FILTER(STR(?year) <= "{year}")
+      FILTER NOT EXISTS {{ ?paper dblp:publishedIn ?venue .
+        FILTER(REGEX(STR(?venue),"workshop|companion|findings|demonstration|tutorial","i")) }}'''
+
+
+async def fetch_page(provider, name, job):
+    pattern = base_pattern(name,date.fromisoformat(job['end']).year)
+    total = job['total']
+    if total is None:
+        result = await provider.dblp_query(PREFIX + 'SELECT (COUNT(DISTINCT ?paper) AS ?count) WHERE {' + pattern + '}')
+        total = int(result['results']['bindings'][0]['count']['value'])
+    cursor = job['cursor']
+    if cursor and not re.fullmatch(r'https://dblp\.org/rec/[A-Za-z0-9_./()-]+',cursor):
+        raise SourceError('invalid_cursor','DBLP 断点格式异常，未执行查询。')
+    after = 'FILTER(STR(?paper) > ' + json.dumps(cursor) + ')' if cursor else ''
+    query = PREFIX + f'''
+SELECT ?paper (SAMPLE(?t) AS ?title) (SAMPLE(?y) AS ?year) (SAMPLE(?v) AS ?venue)
+ (SAMPLE(?url) AS ?link) (GROUP_CONCAT(DISTINCT ?name; separator="|") AS ?authors)
+WHERE {{ {{ SELECT DISTINCT ?paper WHERE {{ {pattern} {after} }} ORDER BY ?paper LIMIT {PAGE_SIZE} }}
+ ?paper dblp:title ?t; dblp:yearOfPublication ?y .
+ OPTIONAL {{ ?paper dblp:publishedIn ?v }} OPTIONAL {{ ?paper dblp:primaryDocumentPage ?url }}
+ OPTIONAL {{ ?paper dblp:authoredBy ?author . ?author dblp:primaryCreatorName ?name }}
+}} GROUP BY ?paper ORDER BY ?paper'''
+    payload = await provider.dblp_query(query)
+    rows = payload['results']['bindings']
+    records, ids = [], []
+    for row in rows:
+        get = lambda key: row.get(key,{}).get('value','')
+        identifier = get('paper')
+        if not identifier.startswith('https://dblp.org/rec/') or (cursor and identifier <= cursor):
+            raise SourceError('invalid_page','DBLP 分页没有向前推进，保留断点等待重试。')
+        ids.append(identifier)
+        records.append(PublicRecord(source='conferences',source_id='dblp:'+identifier.split('/rec/',1)[1],
+            title=get('title'),authors=get('authors').split('|') if get('authors') else [],
+            url=safe_url(get('link')) or identifier,doi=doi_id(get('link')),conference=name,
+            venue=get('venue'),publication_year=int(get('year')),index_provider='DBLP',retrieved_at=now(),rank=10000))
+    if len(set(ids)) != len(ids):
+        raise SourceError('invalid_page','DBLP 分页出现重复标识，未推进断点。')
+    complete = len(ids) < PAGE_SIZE
+    # The graph can change during a crawl; an unexpectedly short scan must not be called complete.
+    if complete and job['scanned']+len(ids) < total:
+        raise SourceError('incomplete_snapshot','DBLP 索引在采集中变化，保留断点稍后核对。')
+    return records,len(ids),total,max(ids) if ids else cursor,complete
 
 
 async def synchronize(provider, end, previous, seconds=600):
-    state = copy.deepcopy(previous)
-    records, jobs, reports, blocked = [], [], {}, {}
-    deadline = time.monotonic() + seconds
-    for index in ('OpenAlex', 'DBLP'):
-        for name in CONFERENCE_SOURCES:
-            key = index + ':' + name
-            entry = state.setdefault(key, {})
-            history = entry.setdefault('history', new_pass(end))
-            # Reconcile late-indexed historical works periodically; DBLP has no change-feed here.
-            cadence = 30 if index == 'OpenAlex' else 1
-            if history['complete'] and (end - date.fromisoformat(history['end'])).days >= cadence:
-                entry['last_completed'] = history['end']
-                entry['history'] = history = new_pass(end)
-            if not history['complete']:
-                jobs.append((index, name, 'history'))
-            if index == 'OpenAlex':
-                recent = entry.get('recent')
-                if not recent or (recent['complete'] and recent['end'] < str(end)):
-                    start = date.fromisoformat(recent['end']) - timedelta(days=7) if recent else end - timedelta(days=30)
-                    entry['recent'] = recent = new_pass(end, str(start))
-                if not recent['complete']:
-                    jobs.insert(0, (index, name, 'recent'))
-            entry.pop('error', None)
-            reports[key] = {'conference': name, 'index_provider': index, 'label': name + ' · ' + index,
-                            'state': 'success', 'count': 0, 'note': '逐页采集，无收录总量上限。'}
-    # One page per queue turn prevents one large conference starving the others.
-    while jobs and time.monotonic() < deadline:
-        index, name, kind = jobs.pop(0)
-        key = index + ':' + name
-        entry, report = state[key], reports[key]
-        if index in blocked:
-            entry['error'] = blocked[index]
-            report.update(state='error', note=blocked[index])
+    state = {key:copy.deepcopy(entry) for key,entry in previous.items() if key.startswith('DBLP:') and entry.get('method')==METHOD}
+    records,jobs,reports = [],[],{}
+    deadline = time.monotonic()+seconds
+    blocked = None
+    for name in DBLP_STREAMS:
+        key='DBLP:'+name
+        entry=state.setdefault(key,{'method':METHOD,'history':new_pass(end)})
+        reports[key]={'conference':name,'index_provider':'DBLP','label':name+' · DBLP','state':'success','count':0,'note':''}
+        if entry.get('retry_after') and entry['retry_after'] > str(end):
+            reports[key].update(state='error',note=entry.get('error','等待来源恢复'))
             continue
-        job = entry[kind]
+        entry.pop('error',None)
+        history=entry['history']
+        if history['complete'] and history['end'] < str(end):
+            entry['last_completed']=history['end']
+            entry['history']=history=new_pass(end)
+        if not history['complete']:jobs.append(name)
+    while jobs and time.monotonic()<deadline:
+        name=jobs.pop(0);key='DBLP:'+name
+        entry,report=state[key],reports[key]
+        if blocked:
+            entry['error']=blocked;report.update(state='error',note=blocked);continue
+        job=entry['history']
         try:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                break
-            batch, count, total, cursor, complete = await asyncio.wait_for(fetch_page(provider, index, name, job), remaining)
-            # Advance only after validation succeeds. All page records and its checkpoint commit together.
+            batch,count,total,cursor,complete=await asyncio.wait_for(fetch_page(provider,name,job),max(.001,deadline-time.monotonic()))
             records.extend(batch)
-            job.update(cursor=cursor, offset=job['offset'] + count, scanned=job['scanned'] + count,
-                       pages=job['pages'] + 1, total=total, complete=complete, updated_at=now())
-            report['count'] += len(batch)
-            if complete:
-                job['completed_at'] = now()
-            else:
-                jobs.append((index, name, kind))
+            job.update(cursor=cursor,scanned=job['scanned']+count,pages=job['pages']+1,total=total,complete=complete,updated_at=now())
+            report['count']+=len(batch)
+            if complete:job['completed_at']=now()
+            else:jobs.append(name)
         except asyncio.TimeoutError:
-            break  # Save completed pages; this page is retried next run.
+            break
         except Exception as exc:
-            note = exc.message if isinstance(exc, SourceError) else '索引分页请求未完成；已保存成功页面，稍后从断点重试。'
-            entry['error'] = note
-            report.update(state='partial' if report['count'] else 'error', note=note)
-            # Reject/limit stops this host, not the other index. No access-challenge bypass.
-            if isinstance(exc, SourceError) and exc.code in ('access_denied', 'rate_limited', 'dblp_unavailable'):
-                blocked[index] = note
-    for key, entry in state.items():
-        if key not in reports:
-            continue
-        entry['pending'] = not entry['history']['complete'] or not entry.get('recent', {'complete': True})['complete']
-        if entry.get('error'):
-            entry['retry_after'] = str(end + timedelta(days=1))
-        else:
-            entry.pop('retry_after', None)
-        reports[key]['progress'] = entry
+            note=exc.message if isinstance(exc,SourceError) else 'DBLP 分页请求未完成，保留断点稍后重试。'
+            entry['error']=note;report.update(state='partial' if report['count'] else 'error',note=note)
+            if isinstance(exc,SourceError) and exc.code in ('access_denied','rate_limited','dblp_unavailable'):blocked=note
+    for key,entry in state.items():
+        entry['pending']=not entry['history']['complete']
+        if entry.get('error'):entry['retry_after']=str(end+timedelta(days=1))
+        else:entry.pop('retry_after',None)
+        reports[key]['progress']=entry
         if not entry.get('error'):
-            reports[key]['note'] = '分页检查完成（仅当前索引覆盖）。' if not entry['pending'] else '补采进行中，下一轮从已保存断点继续；无篇数上限。'
-    return records, list(reports.values()), state
+            reports[key]['note']='本轮 DBLP 历史索引已遍历。' if not entry['pending'] else 'DBLP 历史分页进行中，保存断点后自动续采；不设收录篇数上限。'
+    return records,list(reports.values()),state
 
 
-def needs_backfill(state, today):
-    return not state or any(e.get('pending') and (not e.get('retry_after') or e['retry_after'] <= str(today)) for e in state.values())
+def needs_backfill(state,today):
+    return not state or any(e.get('pending') and (not e.get('retry_after') or e['retry_after']<=str(today)) for e in state.values())

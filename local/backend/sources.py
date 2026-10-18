@@ -254,6 +254,9 @@ class Providers:
         raise SourceError("network_error", "来源连接失败。")
 
     async def search(self, source: Source, request: SearchRequest) -> SourceData:
+        if source == "conferences":
+            from scripts.dblp_search import search_conferences
+            return await search_conferences(self.client, request)
         import json
 
         end_date = effective_end_date(request)
@@ -276,14 +279,11 @@ class Providers:
             note = "按 arXiv 首次提交日期筛选（UTC）；关键词以 AND 连接。"
             limited = total > request.limit
             scanned = len(records)
-        elif source in ("openalex", "conferences"):
+        elif source == "openalex":
             # A fulltext-only mention must not outrank topical papers just because
             # its publication date is newer. Use OpenAlex's scoped text search.
             params: dict = {"search.title_and_abstract": request.query, "per_page": request.limit}
             filters = []
-            if source == "conferences":
-                ids = [identifier for conference in request.conferences for identifier in CONFERENCE_SOURCES[conference]]
-                filters.append("primary_location.source.id:" + "|".join(ids))
             if request.start_date:
                 filters.append(f"from_publication_date:{request.start_date}")
             filters.append(f"to_publication_date:{end_date}")
@@ -295,15 +295,6 @@ class Providers:
             retrieved = now()
             records, total = parse_openalex(json.loads(body), retrieved)
             note = "仅匹配 OpenAlex 标题和摘要，不使用全文中的零散提及；按索引发表日期筛选，可能不同于预印本提交日期。"
-            if source == "conferences":
-                lookup = {identifier: conference for conference in request.conferences for identifier in CONFERENCE_SOURCES[conference]}
-                items = json.loads(body)["results"]
-                for record, item in zip(records, items):
-                    source_id = ((item.get("primary_location") or {}).get("source") or {}).get("id", "").rsplit("/", 1)[-1]
-                    record.source = "conferences"
-                    record.conference = lookup.get(source_id)
-                records = [r for r in records if r.conference]
-                note = "仅匹配标题和摘要；按已核对的 OpenAlex 会议论文集 ID 筛选，非会议官网全量抓取；ICML、ICLR、ECCV 索引覆盖尤其有限。日期为索引发表日期，录用状态以原文为准。"
             limited = total > request.limit
             scanned = len(records)
         elif source == "openreview":

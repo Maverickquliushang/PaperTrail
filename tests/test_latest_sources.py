@@ -12,8 +12,8 @@ class FakeLatest(LatestProviders):
         self.calls = []
         self.fail_one = fail_one
 
-    async def dblp_body(self, params):
-        return {"result":{"hits":{"@total":"0","hit":[]}}}
+    async def dblp_query(self, query):
+        return {'results':{'bindings':[{'count':{'value':'0'}}] if 'COUNT(' in query else []}}
 
     async def request(self, source, url, params):
         self.calls.append((source, url, params))
@@ -40,7 +40,7 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         params = {source: p for source, _, p in provider.calls}
         self.assertIn('cat:cs.AI', params['arxiv']['search_query'])
         self.assertIn('primary_topic.subfield.id:1702', params['openalex']['filter'])
-        self.assertIn('primary_location.source.id:', params['conferences']['filter'])
+        self.assertNotIn('conferences',params)
         self.assertNotIn('search', params['openalex'])
         self.assertNotIn('search.title_and_abstract', params['openalex'])
         self.assertEqual({p['month'] for s, _, p in provider.calls if s == 'huggingface'}, {'2026-09','2026-10'})
@@ -55,20 +55,17 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         data = await FakeLatest(fail_one=True).latest('openreview', date(2026,9,19), date(2026,10,18), 100)
         self.assertTrue(data.partial)
 
-    async def test_each_conference_has_history_and_recent_pagination(self):
+    async def test_conferences_use_only_dblp(self):
         provider=FakeLatest()
-        data=await provider.latest('conferences', date(2026,9,19), date(2026,10,18), 100)
-        calls=[p for source,_,p in provider.calls if source=='conferences']
-        self.assertEqual(len(calls),22)
-        self.assertEqual(sum('from_publication_date' not in p['filter'] for p in calls),11)
-        self.assertTrue(all(p['per_page']==100 for p in calls))
-        self.assertEqual(len(data.reports),22)
+        data=await provider.latest('conferences',date(2026,9,19),date(2026,10,18),100)
+        self.assertFalse(any(source=='conferences' for source,_,_ in provider.calls))
+        self.assertEqual(len(data.reports),11)
+        self.assertTrue(all(r['index_provider']=='DBLP' for r in data.reports))
 
-    async def test_failed_dblp_does_not_erase_openalex_status(self):
+    async def test_dblp_failure_is_explicit(self):
         class Blocked(FakeLatest):
-            async def dblp_body(self, params):
+            async def dblp_query(self, query):
                 raise SourceError('dblp_unavailable','Access verification')
         data=await Blocked().latest('conferences',date(2026,9,19),date(2026,10,18),100)
         self.assertTrue(data.partial)
-        self.assertTrue(all(r['state']=='error' for r in data.reports if r['index_provider']=='DBLP'))
-        self.assertTrue(all(r['state']=='success' for r in data.reports if r['index_provider']=='OpenAlex'))
+        self.assertTrue(all(r['state']=='error' for r in data.reports))

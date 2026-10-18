@@ -99,18 +99,22 @@ class LatestProviders(Providers):
                           partial=any(r['state'] in ('error','partial') for r in reports),
                           note='分页补采历史并保留断点；收录总量不设篇数上限。')
 
-    async def dblp_body(self, params):
-        # Never reuse the OpenAlex request helper: its Authorization header is host-specific.
-        await asyncio.sleep(1)
-        async with self.client.stream('GET', 'https://dblp.org/search/publ/api', params=params, timeout=20) as response:
-            if response.status_code != 200 or 'json' not in response.headers.get('content-type', ''):
-                raise SourceError('dblp_unavailable', 'DBLP 当前返回访问验证或不可用响应；未取得论文数据，可打开 DBLP 会议目录查看。')
-            body = bytearray()
+    async def dblp_query(self, query):
+        # Public official query service. No OpenAlex headers or private credentials are sent.
+        await asyncio.sleep(.3)
+        async with self.client.stream('GET','https://sparql.dblp.org/sparql',
+            params={'query':query,'format':'json'},headers={'Accept':'application/sparql-results+json'},timeout=60) as response:
+            if response.status_code == 429:
+                raise SourceError('rate_limited','DBLP 查询服务限流，保留已完成页面，次日重试。')
+            if response.status_code != 200 or 'json' not in response.headers.get('content-type',''):
+                raise SourceError('dblp_unavailable','DBLP 官方查询服务暂时不可用，保留断点，不绕过访问验证。')
+            body=bytearray()
             async for chunk in response.aiter_bytes():
                 body.extend(chunk)
-                if len(body) > 8 * 1024 * 1024:
-                    raise SourceError('response_too_large', 'DBLP 响应超过本次大小上限。')
-        return json.loads(body)
+                if len(body)>16*1024*1024:raise SourceError('response_too_large','DBLP 单页响应异常过大，保留断点。')
+        data=json.loads(body)
+        if not isinstance(data.get('results',{}).get('bindings'),list):raise SourceError('invalid_response','DBLP 查询响应格式异常。')
+        return data
 
     async def openreview_catalog(self, end, limit):
         records, reports = {}, []
@@ -128,7 +132,7 @@ class LatestProviders(Providers):
                         if view == 'accepted':
                             payload = json.loads(await self.request('openreview', 'https://api2.openreview.net/notes', {
                                 'content.venueid': venue, 'sort': 'pdate:desc', 'limit': limit}))
-                            parsed = [PublicRecord(**r.model_dump(), review_status='accepted', index_provider='OpenReview')
+                            parsed = [PublicRecord(**(r.model_dump() | {'review_status':'accepted','index_provider':'OpenReview'}))
                                       for r in parse_openreview(payload, now(), [name])]
                         else:
                             group_data = json.loads(await self.request('openreview', 'https://api2.openreview.net/groups', {'id': venue}))

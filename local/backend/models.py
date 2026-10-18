@@ -57,6 +57,8 @@ class Record(BaseModel):
     pdf_url: str | None = None
     venue: str | None = None
     conference: str | None = None
+    publication_year: int | None = None
+    index_provider: str | None = None
     publication_date: str | None = None
     submitted_date: str | None = None
     updated_date: str | None = None

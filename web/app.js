@@ -72,7 +72,7 @@ function renderDirectory() {
     for (const name of conference === 'all' ? conferenceNames : [conference]) {
       const row = element('div',undefined,'collection-row');
       row.append(element('strong',`${name} · 本站已收录 ${catalog.conference_catalog?.counts?.[name] ?? 0} 篇`));
-      for (const index of ['OpenAlex','DBLP']) {
+      for (const index of ['DBLP']) {
         const entry = catalog.conference_sync?.[index+':'+name], h = entry?.history;
         const status = entry?.error ? '访问受限 / 等待重试' : h?.complete ? '本轮历史索引已遍历' : h ? '历史补采中' : '等待开始补采';
         row.append(element('p',`${index}：${status}${h ? ` · 已检查 ${h.scanned} / ${h.total ?? '未知'} 条索引记录（${h.pages} 页）` : ''}`));
@@ -140,7 +140,7 @@ function emptyMessage() {
   const scope = source === 'all' ? '当前论文库' : sourceNames[source];
   const window = '当前已采集的索引范围内（不设统一起始日期）';
   return `${scope}在${window}尚未收录论文。这不代表该来源没有论文；页面日期留空也只浏览已采集数据，不会扩大采集范围。` +
-    (source === 'conferences' ? ' 顶会专区按 OpenAlex / DBLP 会议索引收录；可用上方 DBLP 目录查看其他年份，收录不保证完整。' : '') +
+    (source === 'conferences' ? ' 顶会专区按 DBLP 会议索引收录；可用上方 DBLP 目录查看其他年份，收录不保证完整。' : '') +
     ' 可切换“全部来源”浏览其他已收录论文。';
 }
 function dailyPapers(day) {

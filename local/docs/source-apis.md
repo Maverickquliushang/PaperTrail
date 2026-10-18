@@ -14,11 +14,11 @@ arXiv 的 `published` 是首次提交时间，`updated` 是版本更新时间。
 
 ## 顶会扩展
 
-- `conferences` 通道：调用 OpenAlex `/works`，以 `primary_location.source.id` 筛选，ID 位于 `backend/conferences.py`，2026-10-18 逐个从 `/sources` 核对。覆盖 NeurIPS、ICML、ICLR、CVPR、ICCV、ECCV、ACL、EMNLP、AAAI、IJCAI、KDD。并非各会议官网全集，ICML、ICLR、ECCV 的专属来源收录量尤其有限；不把包含其他会议的整个 PMLR/LNCS 系列标为某个顶会。
+- `conferences` 通道：使用 DBLP 官方 SPARQL 知识图谱，按会议流查询主会论文标题。覆盖 11 个会议；累计库每页 500 条、保存断点，不限制收录总量。本地实时搜索仍按用户单次请求数量返回。DBLP 只提供年份时保留年份，不补造具体日期；设置精确日期筛选时明确提示该通道不支持。
 - `openreview` 通道：`https://api2.openreview.net/notes/search`，实际验证 `term`、`content=all`、`source=forum`、`group=ICLR.cc/ICML.cc/NeurIPS.cc`、`limit=100`。逐组请求，仅保留 `venueid` 精确为 `会议域名/年份/Conference` 的主会论文，排除拒稿、撤稿、workshop 和回复。使用公开 `pdate` 作为筛选日期，`cdate` 单独保存；不把会议年份伪造成日期。每会候选上限 100，日期筛选与排序在候选内，API v1 历史会议可能缺失；总符合条件数量未知。
 - OpenReview 官方依据：[搜索接口](https://docs.openreview.net/reference/api-v2/openapi-definition)、[按 venueid 区分已录用与拒稿等状态](https://docs.openreview.net/how-to-guides/data-retrieval-and-modification/how-to-get-all-notes-for-submissions-reviews-rebuttals-etc)。实际请求无登录可返回公开记录。
-- 顶会索引与 OpenAlex 普通搜索共享锁、速率间隔和密钥；同一 OpenAlex work ID 跨两通道合并，只贡献一次排名权重。
-- DBLP 官方和官方镜像本次均返回 HTTP 202 访问验证页，因此未接入，不把验证页当作空结果或声称可用。
+- DBLP 与 OpenAlex 是独立来源；通过明确 DOI 等标识合并，不混用来源 ID。
+- DBLP 普通搜索接口可能返回访问验证页；本版使用已实测的官方知识图谱接口 `https://sparql.dblp.org/sparql`，不绕过验证页。
 
 ## 结果合并和排序
 
@@ -47,8 +47,8 @@ arXiv 的 `published` 是首次提交时间，`updated` 是版本更新时间。
 
 ## 每日规则排序
 
-每个主题每个通道至多 50 条实时结果，先按可靠标识符合并。排序分数为：45 × 标题关键词覆盖率 + 25 × min(1, 来源融合分 × 61 / 4) + 20 × 1/(1 + 距最新来源日期天数/7) + 10（存在会议记录时）。日期分采用各来源保留的日期，不能视为统一发表时间。先排除去重窗口内已推荐的论文，再取配置篇数；成功但覆盖受限的查询不保证全量，跨来源缺少共同标识时不按标题强行去重。
+每个主题每个通道至多 50 条实时结果，先按可靠标识符合并。排序分数为：45 × 标题关键词覆盖率 + 25 × min(1, 来源融合分 × 61 / 4) + 20 × 1/(1 + 距最新来源日期天数/7) + 10（存在会议记录时）。日期分采用各来源保留的日期，不能视为统一发表时间。先排除去重窗口内已推荐的论文，按配置篇数展示（0 表示展示全部已取得的匹配结果）；成功但覆盖受限的查询不保证全量，跨来源缺少共同标识时不按标题强行去重。
 
 ## 日期与关键词范围
 
-所有来源的日期上限为用户结束日期与北京时间今天的较早值。OpenAlex 及顶会通道仅匹配标题和摘要；日期过滤之外，本地再次检查来源日期。关键词匹配不保证论文主旨属于某个研究领域，用户可组合多个关键词缩小范围。
+所有来源的日期上限为用户结束日期与北京时间今天的较早值。OpenAlex 匹配标题和摘要；DBLP 顶会通道匹配标题，只有年份时不参与精确日期筛选；日期过滤之外，本地再次检查来源日期。关键词匹配不保证论文主旨属于某个研究领域，用户可组合多个关键词缩小范围。
