@@ -66,14 +66,21 @@ class LatestProviders(Providers):
                 records.extend(await asyncio.wait_for(self.daily_pages(source,end),180))
             except (SourceError,asyncio.TimeoutError):
                 partial = True
+        from scripts.bibliography_sync import synchronize
+        state=getattr(self,'source_state',{})
+        historical,entry=await synchronize(self,source,end,state.get(source),seconds=getattr(self,'bibliography_seconds',120))
+        state[source]=entry;self.source_state=state
+        records.extend(historical)
+        partial = partial or entry['pending'] or bool(entry.get('error'))
+        note += f" 历史分页已检查 {entry['scanned']} 条、{entry['pages']} 页；边界日期 {entry['boundary']}。" + (entry.get('error') or ('将从断点继续补采，无累计篇数上限。' if entry['pending'] else '本轮历史列表已遍历。'))
         scanned = len(records)
         records = list({r.source_id: r for r in records if r.filter_date and r.filter_date <= str(end)}.values())
         records.sort(key=lambda r: (r.filter_date, r.source_id), reverse=True)
         if partial:
-            note += '部分子请求失败，当前仅展示成功返回的候选。'
+            note += '采集尚未完成，当前展示已成功收录的论文。'
         note += f' 近期检索种子每列表读取 {limit} 条；arXiv / OpenAlex 当日列表另行分页读取，不限制推荐展示数量。'
         return LatestData(records=records, total=total, scanned=scanned,
-                          limited=total is None or total > limit, partial=partial,
+                          limited=entry['pending'], partial=partial,
                           note=note, retrieved_at=stamp)
 
     async def huggingface_page(self, cursor):
@@ -138,49 +145,62 @@ class LatestProviders(Providers):
         return data
 
     async def openreview_catalog(self, end, limit):
-        records, reports = {}, []
-        unavailable = None
-        for year in (end.year - 1, end.year, end.year + 1):
-            for name, group in OPENREVIEW_GROUPS.items():
-                venue = f'{group}/{year}/Conference'
-                for view in ('accepted', 'public'):
-                    if view == 'accepted' and year > end.year:
-                        continue
-                    label = f'{name} {year} · ' + ('已录用' if view == 'accepted' else '公开投稿')
+        import time
+        from datetime import timedelta
+        states=getattr(self,'source_state',{})
+        state=states.setdefault('openreview',{'end':str(end),'jobs':{},'pending':True})
+        if state.get('end')!=str(end) and not state.get('pending'):
+            states['openreview']=state={'end':str(end),'jobs':{},'pending':True}
+        self.source_state=states
+        if state.get('retry_after','')>str(end):
+            return LatestData(records=[],reports=[{'label':'OpenReview','state':'error','count':0,'note':state.get('error','等待来源恢复')}],partial=True,retrieved_at=now())
+        records,reports={},[]
+        unavailable=None;deadline=time.monotonic()+120
+        for name,group in OPENREVIEW_GROUPS.items():
+            for year in range(end.year-2,end.year+2):
+                venue=f'{group}/{year}/Conference'
+                for view in ('accepted','public'):
+                    if view=='accepted' and year>end.year:continue
+                    label=f'{name} {year} · '+('已录用' if view=='accepted' else '公开投稿')
+                    job=state['jobs'].setdefault(label,{'offset':0,'complete':False,'pages':0})
+                    count=0
                     try:
-                        if unavailable:
-                            raise SourceError('access_denied', unavailable)
-                        if view == 'accepted':
-                            payload = json.loads(await self.request('openreview', 'https://api2.openreview.net/notes', {
-                                'content.venueid': venue, 'sort': 'pdate:desc', 'limit': limit}))
-                            parsed = [PublicRecord(**(r.model_dump() | {'review_status':'accepted','index_provider':'OpenReview'}))
-                                      for r in parse_openreview(payload, now(), [name])]
-                        else:
-                            group_data = json.loads(await self.request('openreview', 'https://api2.openreview.net/groups', {'id': venue}))
-                            groups = group_data.get('groups', [])
-                            if not groups:
-                                reports.append({'label': label, 'view': view, 'state': 'success', 'count': 0, 'note': '该年度会议组尚未公开或不存在。'})
-                                continue
-                            content = groups[0].get('content', {})
-                            submission = value(content, 'submission_name')
-                            if not submission:
-                                raise SourceError('missing_schema', '会议未公开投稿入口名称，未猜测接口。')
-                            invitation = f'{venue}/-/{submission}'
-                            mapping = {value(content, key): status for key, status in (
-                                ('submission_venue_id','under_review'), ('withdrawn_venue_id','withdrawn'),
-                                ('rejected_venue_id','rejected'), ('desk_rejected_venue_id','desk_rejected')) if value(content, key)}
-                            payload = json.loads(await self.request('openreview', 'https://api2.openreview.net/notes', {
-                                'invitation': invitation, 'sort': 'cdate:desc', 'limit': limit}))
-                            parsed = parse_public_submissions(payload, name, venue, invitation, mapping, now())
-                        parsed = [r for r in parsed if not r.filter_date or r.filter_date <= str(end)]
-                        for r in parsed:
-                            records[r.source_id] = r
-                        reports.append({'label': label, 'view': view, 'state': 'limited', 'count': len(parsed),
-                                        'note': f'至多 {limit} 条公开候选，不设起始日期；仅按来源明确提供的状态标注，未知状态不视为在审。'})
+                        if unavailable:raise SourceError('access_denied',unavailable)
+                        if not job['complete'] and time.monotonic()<deadline:
+                            if view=='accepted':
+                                params={'content.venueid':venue,'sort':'pdate:desc','limit':100}
+                                parse=lambda payload:[PublicRecord(**(r.model_dump()|{'review_status':'accepted','index_provider':'OpenReview'})) for r in parse_openreview(payload,now(),[name])]
+                            else:
+                                group_data=json.loads(await self.request('openreview','https://api2.openreview.net/groups',{'id':venue}))
+                                groups=group_data.get('groups',[])
+                                if not groups:
+                                    job['complete']=True
+                                    reports.append({'label':label,'view':view,'state':'success','count':0,'note':'该年度会议组尚未公开或不存在。'})
+                                    continue
+                                content=groups[0].get('content',{});submission=value(content,'submission_name')
+                                if not submission:raise SourceError('missing_schema','会议未公开投稿入口名称，未猜测接口。')
+                                invitation=f'{venue}/-/{submission}'
+                                mapping={value(content,key):status for key,status in (('submission_venue_id','under_review'),('withdrawn_venue_id','withdrawn'),('rejected_venue_id','rejected'),('desk_rejected_venue_id','desk_rejected')) if value(content,key)}
+                                params={'invitation':invitation,'sort':'cdate:desc','limit':100}
+                                parse=lambda payload:parse_public_submissions(payload,name,venue,invitation,mapping,now())
+                            while not job['complete'] and time.monotonic()<deadline:
+                                payload=json.loads(await asyncio.wait_for(self.request('openreview','https://api2.openreview.net/notes',{**params,'offset':job['offset']}),max(.001,deadline-time.monotonic())))
+                                raw=payload.get('notes')
+                                if not isinstance(raw,list):raise ValueError('Missing notes')
+                                if raw and raw[0].get('id') and raw[0]['id']==job.get('first_id'):raise SourceError('invalid_page','OpenReview 重复返回上一页，保留断点。')
+                                parsed=parse(payload)
+                                for record in parsed:
+                                    if not record.filter_date or record.filter_date<=str(end):records[record.source_id]=record;count+=1
+                                job.update(offset=job['offset']+len(raw),pages=job['pages']+1,first_id=raw[0].get('id') if raw else None)
+                                job['complete']=len(raw)<100 or (isinstance(payload.get('count'),int) and job['offset']>=payload['count'])
+                        reports.append({'label':label,'view':view,'state':'success' if job['complete'] else 'partial','count':count,'note':f"已检查 {job['offset']} 条、{job['pages']} 页；"+('该会议年度查询已完成。' if job['complete'] else '保存断点后继续，无 100 篇总量截断。')})
+                    except asyncio.TimeoutError:
+                        reports.append({'label':label,'view':view,'state':'partial','count':count,'note':'本轮保存断点，后续继续分页。'})
                     except Exception as exc:
-                        note = exc.message if isinstance(exc, SourceError) else 'OpenReview 本轮请求失败。'
-                        if isinstance(exc, SourceError) and exc.code in ('access_denied','rate_limited'):
-                            unavailable = note
-                        reports.append({'label': label, 'view': view, 'state': 'error', 'count': 0, 'note': note})
-        return LatestData(records=list(records.values()), reports=reports, retrieved_at=now(), limited=True,
-                          partial=any(r['state'] == 'error' for r in reports), note='已录用与公开投稿分开浏览。')
+                        note=exc.message if isinstance(exc,SourceError) else 'OpenReview 本轮请求失败，保留断点。'
+                        if isinstance(exc,SourceError) and exc.code in ('access_denied','rate_limited'):
+                            unavailable=note;state['error']=note;state['retry_after']=str(end+timedelta(days=1))
+                        reports.append({'label':label,'view':view,'state':'error','count':count,'note':note})
+        state['pending']=any(not j['complete'] for j in state['jobs'].values())
+        if not unavailable:state.pop('error',None);state.pop('retry_after',None)
+        return LatestData(records=list(records.values()),reports=reports,retrieved_at=now(),partial=any(r['state']!='success' for r in reports),note='支持的会议年度逐页读取；不含未接入的历史 API v1 数据。')

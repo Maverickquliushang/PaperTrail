@@ -57,9 +57,6 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
     providers.conference_state = previous.get("conference_sync", {})
     providers.source_state = previous.get("source_sync", {})
     for source in config["sources"]:
-        if backfill_only and source not in ("conferences", "huggingface"):
-            statuses[source] = previous.get("source_status", {}).get(source, {"state":"error", "queries":[]})
-            continue
         records, reports = [], []
         try:
             data = await providers.latest(source, start, today, config["candidate_limit"])
@@ -67,6 +64,11 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
             reports.extend(getattr(data, "reports", []) or [{"label": "AI 最新论文", "state": "partial" if getattr(data, "partial", False) else "limited" if data.limited else "success",
                             "count": len(records), "note": data.note}])
         except Exception as exc:
+            if source in ('arxiv','openalex'):
+                entry=providers.source_state.setdefault(source,{'end':str(today),'boundary':str(today),'offset':0,'scanned':0,'pages':0,'complete':False,'pending':True})
+                entry['error']=exc.message if isinstance(exc,SourceError) else '来源请求未完成。'
+                if isinstance(exc,SourceError) and exc.code in ('access_denied','rate_limited'):
+                    entry['retry_after']=str(today+timedelta(days=1))
             reports.append({"label": "AI 最新论文", "state": "error", "count": 0,
                             "note": exc.message if isinstance(exc, SourceError) else "来源请求未完成，请稍后重试。"})
         old_reports = {r.get("label"): r for r in previous.get("source_status", {}).get(source, {}).get("queries", [])}

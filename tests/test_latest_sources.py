@@ -47,7 +47,7 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('search', params['openalex'])
         self.assertNotIn('search.title_and_abstract', params['openalex'])
         self.assertTrue(all('month' not in p for s, _, p in provider.calls if s == 'huggingface'))
-        self.assertEqual(len([1 for s, url, _ in provider.calls if s == 'openreview' and url.endswith('/notes')]), 15)
+        self.assertEqual(len([1 for s, url, _ in provider.calls if s == 'openreview' and url.endswith('/notes')]), 21)
 
     async def test_community_listing_does_not_replace_publication_date(self):
         data = await FakeLatest().latest('huggingface', date(2026,9,19), date(2026,10,18), 100)
@@ -72,3 +72,17 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         data=await Blocked().latest('conferences',date(2026,9,19),date(2026,10,18),100)
         self.assertTrue(data.partial)
         self.assertTrue(all(r['state']=='error' for r in data.reports))
+
+    async def test_openreview_reads_more_than_one_page(self):
+        class Paged(FakeLatest):
+            async def request(self,source,url,params):
+                if source=='openreview' and params.get('content.venueid')=='ICLR.cc/2026/Conference':
+                    self.calls.append((source,url,params))
+                    offset=params.get('offset',0)
+                    notes=[{'id':f'n{i}','pdate':1767225600000,'content':{'title':{'value':str(i)},'venueid':{'value':'ICLR.cc/2026/Conference'}}} for i in range(offset,min(offset+100,250))]
+                    return json.dumps({'notes':notes,'count':250}).encode()
+                return await super().request(source,url,params)
+        provider=Paged()
+        result=await provider.openreview_catalog(date(2026,10,18),100)
+        self.assertEqual(len(result.records),250)
+        self.assertEqual([p['offset'] for _,_,p in provider.calls if p.get('content.venueid')=='ICLR.cc/2026/Conference'],[0,100,200])
