@@ -1,61 +1,83 @@
 import {dailyArchive} from './daily.js';
-import {sourceNames, translateQuery, search, sortPapers, safeLink, conferenceNames, reviewNames, dblpStreams, scopedPapers} from './search.js';
+import {scopeKey, dateChoices, selectShards, createShardLoader} from './browse.js';
+import {sourceNames, translateQuery, search, sortPapers, safeLink, conferenceNames, reviewNames, dblpStreams, scopedPapers, conferenceYear} from './search.js';
 const $ = id => document.getElementById(id);
-const descriptions = {all:'浏览全部已采集来源',arxiv:'追踪各学科的预印本研究',openalex:'学术文献索引与发表信息',huggingface:'社区收录的机器学习论文',conferences:'11 个会议的论文集索引',openreview:'已录用论文与公开投稿分开浏览'};
+const descriptions = {all:'浏览全部已采集来源',arxiv:'追踪各学科的预印本研究',openalex:'OpenAlex 学术索引 · 支持具体日期',huggingface:'社区收录的机器学习论文',conferences:'DBLP 与会议官网 · 按会议、年份浏览',openreview:'已录用论文与公开投稿分开浏览'};
 let routeVersion = 0, loading = false;
-const shardCache = new Map();
+const loadShards = createShardLoader();
+let preview = false, preloadTimer;
 let daily = {days: new Map(), all: []};
 let catalog, terms, page = 1, source = 'all', mode = 'search', conference = 'all', review = 'accepted';
 function element(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function link(text, href) { const node = element('a', text); const safe = safeLink(href); if (safe) { node.href = safe; node.target = '_blank'; node.rel = 'noopener noreferrer'; } return node; }
 function formatted(value) { return value ? new Date(value).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}) : '尚无成功更新'; }
-async function loadPapers(wantedSource, wantedConference, datedOnly = false) {
-  const shards = (catalog.paper_shards || []).filter(s => (!datedOnly || s.dated_count !== 0) && (wantedSource === 'all' || s.sources.includes(wantedSource)) && (wantedSource !== 'conferences' || wantedConference === 'all' || s.conferences.includes(wantedConference)));
-  let cursor = 0;
-  await Promise.all(Array.from({length:Math.min(4,shards.length)},async () => {
-    while (cursor < shards.length) {
-      const shard = shards[cursor++];
-      if (!/^papers\/part-[a-f0-9]+\.json$/.test(shard.file)) throw new Error('论文分片路径不正确');
-      if (!shardCache.has(shard.file)) shardCache.set(shard.file,fetch('./data/'+shard.file).then(async response => {
-        if (!response.ok) throw new Error('论文分片加载失败，请刷新重试');
-        const papers = await response.json();
-        if (!Array.isArray(papers)) throw new Error('论文分片格式不正确');
-        return papers;
-      }).catch(error => {shardCache.delete(shard.file); throw error;}));
-      await shardCache.get(shard.file);
-    }
-  }));
-  return [...new Map([...(catalog.inline_papers || []),...(await Promise.all(shards.map(s => shardCache.get(s.file)))).flat()].map(p => [p.id,p])).values()];
+const today = () => new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+const currentIndex = () => catalog.browse_index?.[scopeKey(source,conference,review)];
+function prepareYears() {
+  const initialized = $('year').options.length > 0;
+  const previous = $('year').value;
+  const counts = currentIndex()?.years || {};
+  const years = Object.keys(counts).sort().reverse();
+  const all = element('option','全部年份'); all.value = '';
+  $('year').replaceChildren(all,...years.map(year => {const o=element('option',`${year} 年 · ${counts[year]} 篇`);o.value=year;return o;}));
+  $('year').value = previous && years.includes(previous) ? previous : !initialized && mode === 'daily' ? years[0] || '' : '';
+}
+function prefetchTarget(target, meeting = 'all', version = routeVersion) {
+  if (!catalog || navigator.connection?.saveData) return;
+  const index = catalog.browse_index?.[scopeKey(target,meeting)];
+  const date = mode === 'daily' && target !== 'conferences' ? ($('history').value === 'all' ? '' : $('history').value || Object.keys(index?.dates || {}).sort().at(-1) || '') : '';
+  const year = target === 'conferences' ? $('year').value : '';
+  loadShards(selectShards(catalog,{source:target,conference:meeting,date,year,datedOnly:mode === 'daily' && target !== 'conferences'}).slice(0,2),{concurrency:1,active:()=>version===routeVersion}).catch(()=>{});
 }
 async function setRoute() {
+  if (!catalog) return;
   const version = ++routeVersion;
   const parts = location.hash.slice(2).split('/');
   source = Object.hasOwn(sourceNames, parts[0]) ? parts[0] : 'all'; mode = parts[1] === 'daily' ? 'daily' : 'search'; page = 1;
   conference = source === 'conferences' && conferenceNames.includes(parts[2]) ? parts[2] : 'all';
   review = source === 'openreview' && parts[2] === 'public' ? 'public' : 'accepted';
   const suffix = source === 'conferences' ? `/${conference}` : source === 'openreview' ? `/${review}` : '';
+  preview = false;
   $('workspace-title').textContent = (sourceNames[source] || '综合工作台') + (source === 'conferences' && conference !== 'all' ? ` · ${conference}` : source === 'openreview' ? ` · ${review === 'public' ? '公开投稿' : '已录用'}` : '');
   for (const node of $('sources').children) { node.href = `#/${node.dataset.source}/${mode}`; node.classList.toggle('active', node.dataset.source === source); node.setAttribute('aria-current', node.dataset.source === source ? 'page' : 'false'); }
   for (const node of $('modes').children) { node.href = `#/${source}/${node.dataset.mode}${suffix}`; node.classList.toggle('active', node.dataset.mode === mode); }
-  $('search-form').hidden = mode !== 'search'; $('start-wrap').hidden = mode !== 'search'; $('end-wrap').hidden = mode !== 'search'; $('history-wrap').hidden = mode !== 'daily';
+  $('modes').querySelector('[data-mode=daily]').textContent = source === 'conferences' ? '按年浏览' : '每日推荐';
+  $('search-form').hidden = mode !== 'search'; $('start-wrap').hidden = mode !== 'search' || source === 'conferences'; $('end-wrap').hidden = mode !== 'search' || source === 'conferences'; $('history-wrap').hidden = mode !== 'daily' || source === 'conferences';
+  $('year-wrap').hidden = source !== 'conferences';
+  if (source === 'conferences') prepareYears();
+  if (mode === 'daily' && source !== 'conferences' && currentIndex()) updateHistoryLabels();
   renderDirectory();
   loading = true;
   $('results').replaceChildren(element('p','正在加载已收录论文…'));
   $('result-summary').textContent = '';
+  $('load-status').textContent = '正在准备论文…'; $('retry-load').hidden = true; $('results').setAttribute('aria-busy','true');
   try {
-    const loaded = await loadPapers(source,conference,mode === 'daily');
+    const date = mode === 'daily' && source !== 'conferences' && $('history').value !== 'all' ? $('history').value : '';
+    const shards = selectShards(catalog,{source,conference,date,year:source === 'conferences' ? $('year').value : '',datedOnly:mode === 'daily' && source !== 'conferences'});
+    let lastPreview = 0;
+    const loaded = await loadShards(shards,{active:()=>version===routeVersion,progress:(rows,done,total)=>{
+      if (version !== routeVersion) return;
+      $('load-status').textContent = `正在加载 ${done}/${total} 个数据分片；已加载内容可先浏览。`;
+      if (mode === 'search' && (!lastPreview || performance.now()-lastPreview>2000)) {
+        lastPreview=performance.now();catalog.papers=rows;preview=true;loading=false;render();loading=true;
+      }
+    }});
     if (version !== routeVersion) return;
-    catalog.papers = loaded;
-    if (mode === 'daily') {
-      const today = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-      daily = dailyArchive(loaded,catalog.history,source,conference,review,today);
+    catalog.papers = [...(catalog.inline_papers || []),...loaded];
+    if (mode === 'daily' && source !== 'conferences') {
+      daily = dailyArchive(catalog.papers,catalog.history,source,conference,review,today());
       updateHistoryLabels();
     }
-    loading = false;
+    loading = false; preview = false;
+    $('load-status').textContent = ''; $('results').setAttribute('aria-busy','false');
     render();
+    clearTimeout(preloadTimer);
+    const thisVersion=version;
+    preloadTimer=setTimeout(()=>{if(thisVersion===routeVersion)for(const key of Object.keys(sourceNames))if(key!==source)prefetchTarget(key,'all',thisVersion);},1200);
   } catch (error) {
     if (version !== routeVersion) return;
     loading = false;
+    $('load-status').textContent = error.message; $('retry-load').hidden = false; $('results').setAttribute('aria-busy','false');
     $('results').replaceChildren(element('p',error.message,'error'));
   }
 }
@@ -74,9 +96,12 @@ function renderDirectory() {
       a.dataset.conference = name; a.classList.toggle('active',name === conference); a.setAttribute('aria-current',name === conference ? 'page' : 'false');
       a.append(element('small',`${count} 篇`)); $('subnav').append(a);
     }
-    $('scope-note').textContent = '不限制收录篇数，也不设起始日期。历史论文逐页补采并保存断点，每天检查新增；遇到限流会暂停后续接。计数是本站去重后的收录量，不是会议官网总量。';
+    $('scope-note').textContent = 'DBLP 历史索引与会议官网公开清单分别采集，包含尚未正式出版的官网论文。按会议年份筛选；不限制收录篇数。DBLP 遍历完成不代表官网或会议论文已收齐，以下分别列出覆盖状态。';
     for (const name of conference === 'all' ? conferenceNames : [conference]) {
-      const row = element('div',undefined,'collection-row');
+      const row = element('a',undefined,'collection-row');
+      row.href = `#/conferences/${mode}/${name}`; row.dataset.conferenceCard=name;
+      row.addEventListener('pointerenter',()=>prefetchTarget('conferences',name));
+      row.addEventListener('focus',()=>prefetchTarget('conferences',name));
       row.append(element('strong',`${name} · 本站已收录 ${catalog.conference_catalog?.counts?.[name] ?? 0} 篇`));
       for (const index of ['DBLP']) {
         const entry = catalog.conference_sync?.[index+':'+name], h = entry?.history;
@@ -86,9 +111,14 @@ function renderDirectory() {
         if (entry?.recent) row.append(element('small',`新增检查：${entry.recent.start} 至 ${entry.recent.end} · ${entry.recent.complete ? '已完成' : '分页进行中'}，已检查 ${entry.recent.scanned} 条。`));
         if (entry?.error) row.append(element('small',entry.error));
       }
+      const official=(catalog.source_status.conferences?.queries || []).find(r=>r.conference===name && r.index==='Official');
+      row.append(element('p',official ? `官网：${official.state==='success'?'该入口已读取':official.state==='partial'?'部分覆盖':'本轮未完成'} · ${official.count} 条候选` : '官网：等待检查'));
+      if(official)row.append(element('small',official.note));
       $('collection-progress').append(row);
+      row.append(element('small',`查看 ${name} 论文 →`));
     }
     for (const name of conference === 'all' ? conferenceNames : [conference]) $('directory-links').append(link(`${name} · DBLP 历年目录 ↗`,`https://dblp.org/db/conf/${dblpStreams[name]}/index.html`));
+    for(const report of visibleReports(catalog.source_status.conferences).filter(r=>r.index==='Official' && r.url))$('directory-links').append(link(`${report.label} ↗`,report.url));
   } else if (source === 'openreview') {
     for (const [key,label] of [['accepted','已录用'],['public','公开投稿']]) {
       const a = element('a',label); a.href = `#/openreview/${mode}/${key}`; a.dataset.review = key;
@@ -146,38 +176,39 @@ function emptyMessage() {
 }
 function updateHistoryLabels() {
   const selected = $('history').value;
-  const dates = new Set([...daily.days.keys(), ...(catalog.history || []).map(h => h.date)]);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(selected)) dates.add(selected);
-  $('history').replaceChildren();
-  const all = element('option',`全部日期 · 已收录 ${daily.all.length} 篇`); all.value = 'all'; $('history').append(all);
-  for (const date of [...dates].sort().reverse()) {
-    const option = element('option',`${date} · ${daily.days.get(date)?.length || 0} 篇`);
-    option.value = date; $('history').append(option);
-  }
-  $('history').value = selected || daily.days.keys().next().value || 'all';
+  const index=currentIndex(), counts=index?.dates || Object.fromEntries([...daily.days].map(([date,rows])=>[date,rows.length]));
+  const all = element('option',`全部日期 · 已收录 ${index?.dated_total ?? daily.all.length} 篇`); all.value = 'all';
+  const options=dateChoices(counts,today(),selected).map(date=>{const count=counts[date] || 0;const o=element('option',`${date} · ${count} 篇${count ? '' : '（暂无收录）'}`);o.value=date;return o;});
+  $('history').replaceChildren(all,...options);
+  $('history').value = selected || Object.keys(counts).filter(d=>d<=today()).sort().at(-1) || today();
 }
 function render() {
   if (!catalog || loading) return;
   $('error').hidden = true; let papers = [];
   try {
     if (mode === 'search') {
-      if ($('start').value && $('end').value && $('start').value > $('end').value) throw new Error('开始日期不能晚于结束日期。');
+      if (source !== 'conferences' && $('start').value && $('end').value && $('start').value > $('end').value) throw new Error('开始日期不能晚于结束日期。');
       const query = translateQuery($('query').value, terms);
-      papers = search(scopedPapers(catalog.papers, source, conference, review), query, {source, start:$('start').value,end:$('end').value,sort:$('sort').value});
+      let scoped=scopedPapers(catalog.papers, source, conference, review);
+      if(source==='conferences')scoped=conferenceYear(scoped,$('year').value,conference);
+      papers = search(scoped, query, {source, start:source==='conferences'?'':$('start').value,end:source==='conferences'?'':$('end').value,sort:$('sort').value});
       $('query-note').textContent = query ? `实际关键词：${query}。在已收录标题与摘要中匹配全部关键词；可选 BM25 排序。` : '正在浏览累计收录的论文，不设统一起始日期。可自行筛选日期；只有年份的记录不参与精确日期筛选。搜索不会向来源实时取数。';
+    } else if (source === 'conferences') {
+      papers=sortPapers(conferenceYear(scopedPapers(catalog.papers,source,conference,review),$('year').value,conference),$('sort').value);
+      $('query-note').textContent='按会议年份浏览全部已收录论文，包含官网已经公开的论文。年份不等于正式出版日期；没有具体月日时不伪造日期。';
     } else {
       const selected = $('history').value;
       papers = sortPapers(selected === 'all' ? daily.all : daily.days.get(selected) || [], $('sort').value);
       $('query-note').textContent = (selected === 'all'
         ? '全部日期：展示当前专区所有有明确日期的已收录论文，跨日期按论文标识去重。'
         : `日期 ${selected}：展示来源标注为该日的全部已收录论文。`)
-        + ' 日期列表来自累计论文库，不限于生成过推荐的日期，也不设 30 天窗口；数量为已收录数，不代表来源当日总量。'
+        + ' 日期连续列出，0 篇表示本站暂无收录，不代表官网当天无论文；可能尚未公开、索引延迟或采集未完成。数量不代表来源当日总量。'
         + (source === 'openreview' && review === 'public' ? ' 公开投稿不代表已录用。' : '');
     }
   } catch (error) { $('error').textContent = error.message; $('error').hidden = false; }
   const pages = Math.max(1, Math.ceil(papers.length / 10)); page = Math.min(page, pages);
   const start = (page - 1) * 10;
-  $('result-summary').textContent = `共 ${papers.length} 篇 · ${papers.length ? `正在显示第 ${start + 1}–${Math.min(start + 10, papers.length)} 篇` : '当前没有可显示论文'}`;
+  $('result-summary').textContent = `${preview ? '加载中 · 暂有' : '共'} ${papers.length} 篇 · ${papers.length ? `正在显示第 ${start + 1}–${Math.min(start + 10, papers.length)} 篇` : '当前没有可显示论文'}${preview ? '（完整数量和排序将在加载完成后更新）' : ''}`;
   $('results').replaceChildren(...papers.slice(start, start + 10).map((p,i) => paperCard(p,start+i+1)));
   if (!papers.length) $('results').append(element('div', emptyMessage(), 'empty'));
   $('page-label').textContent = `第 ${page} / ${pages} 页`; $('previous').disabled = page === 1; $('next').disabled = page === pages;
@@ -187,10 +218,14 @@ for (const [key, name] of Object.entries({all:'全部来源',...sourceNames})) {
   const card = element('a',undefined,'source-card'); card.href = `#/${key}/search`; card.dataset.source = key;
   card.append(element('span','↗','arrow'),element('strong',name),element('small',descriptions[key]));
   card.addEventListener('pointermove', event => { const rect = card.getBoundingClientRect(); card.style.setProperty('--mx', `${event.clientX-rect.left}px`); card.style.setProperty('--my', `${event.clientY-rect.top}px`); });
+  card.addEventListener('pointerenter',()=>prefetchTarget(key));
+  card.addEventListener('focus',()=>prefetchTarget(key));
   $('sources').append(card);
 }
 $('search-form').addEventListener('submit', event => { event.preventDefault(); page = 1; render(); });
-for (const key of ['start','end','sort','history']) $(key).addEventListener('change', () => { page = 1; render(); });
+for (const key of ['start','end','sort']) $(key).addEventListener('change', () => { page = 1; render(); });
+for (const key of ['history','year']) $(key).addEventListener('change',setRoute);
+$('retry-load').addEventListener('click',setRoute);
 for (const [key, delta] of [['previous',-1],['next',1]]) $(key).addEventListener('click', () => {page += delta; render(); $('result-summary').scrollIntoView({block:'start'});});
 window.addEventListener('hashchange',setRoute);
 try {

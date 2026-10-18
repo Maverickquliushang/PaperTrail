@@ -58,12 +58,14 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         data = await FakeLatest(fail_one=True).latest('openreview', date(2026,9,19), date(2026,10,18), 100)
         self.assertTrue(data.partial)
 
-    async def test_conferences_use_only_dblp(self):
+    async def test_conferences_report_both_dblp_and_official_coverage(self):
         provider=FakeLatest()
         data=await provider.latest('conferences',date(2026,9,19),date(2026,10,18),100)
         self.assertFalse(any(source=='conferences' for source,_,_ in provider.calls))
-        self.assertEqual(len(data.reports),11)
-        self.assertTrue(all(r['index_provider']=='DBLP' for r in data.reports))
+        self.assertEqual(len(data.reports),22)
+        self.assertEqual(sum(r.get('index_provider')=='DBLP' for r in data.reports),11)
+        self.assertEqual(sum(r.get('index')=='Official' for r in data.reports),11)
+        self.assertTrue(data.partial)  # Offline official requests must not look complete.
 
     async def test_dblp_failure_is_explicit(self):
         class Blocked(FakeLatest):

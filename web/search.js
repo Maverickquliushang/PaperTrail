@@ -1,4 +1,4 @@
-export const sourceNames = { arxiv: 'arXiv', openalex: 'OpenAlex', huggingface: 'Hugging Face', conferences: '顶会索引', openreview: 'OpenReview' };
+export const sourceNames = { arxiv: 'arXiv', openalex: 'OpenAlex', huggingface: 'Hugging Face', conferences: '顶会论文（DBLP + 官网）', openreview: 'OpenReview' };
 
 export const conferenceNames = ['NeurIPS','ICML','ICLR','CVPR','ICCV','ECCV','ACL','EMNLP','AAAI','IJCAI','KDD'];
 export const reviewNames = {accepted:'已录用',under_review:'在审',withdrawn:'已撤稿',rejected:'未录用',desk_rejected:'编辑拒稿',unknown:'公开投稿 · 状态未确认'};
@@ -28,6 +28,14 @@ export function scopedPapers(papers, source, conference = 'all', review = 'accep
   });
 }
 
+export function conferenceYear(papers, year, conference = 'all') {
+  if (!year) return papers;
+  return papers.flatMap(p => {
+    const primary=(p.evidence || []).find(e=>e.source==='conferences' && (conference==='all' || e.conference===conference) && String(e.publication_year || e.publication_date?.slice(0,4))===year);
+    return primary ? [{...p, date:primary.publication_date || null, year:Number(year),date_kind:primary.publication_date?'发表日期':'仅年份',evidence:[primary,...p.evidence.filter(e=>e!==primary)]}] : [];
+  });
+}
+
 export function translateQuery(raw, terms) {
   let query = raw.trim();
   if (!Object.hasOwn(terms, query)) query = query.replace(/^(?:请)?(?:帮我|给我)?(?:检索|搜索|查找|搜|找|查)(?:一下)?[\s：:]*/, '');
@@ -51,6 +59,7 @@ export function tokens(text) {
 // generic 'model' hit being mistaken for 'large language model low rank'.
 export function search(papers, query, {source = 'all', start = '', end = '', sort = 'date_desc'} = {}) {
   const words = [...new Set(tokens(query))];
+  if (!words.length) return sortPapers(papers.filter(p => (source === 'all' || p.sources.includes(source)) && (!start || p.date && p.date >= start) && (!end || p.date && p.date <= end)), sort);
   const docs = papers.map(p => tokens(`${p.title} ${p.abstract || ''}`));
   const average = docs.reduce((n, d) => n + d.length, 0) / (docs.length || 1) || 1;
   const frequency = new Map(words.map(w => [w, docs.filter(d => d.includes(w)).length]));

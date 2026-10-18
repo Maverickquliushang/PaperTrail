@@ -6,6 +6,7 @@ import json
 import os
 import time
 import uuid
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,8 +17,13 @@ from .sources import Providers, SourceError, effective_end_date
 
 def identities(record: Record) -> set[str]:
     result = {f"{record.source}:{record.source_id}"}
-    if record.source == "conferences" and record.index_provider != "DBLP":
+    if record.source == "conferences" and record.index_provider in (None, "OpenAlex"):
         result.add(f"openalex:{record.source_id}")
+    result.update(key for key in record.related_ids if re.fullmatch(r'openreview:[\w-]+', key))
+    if record.source == 'conferences' and record.conference and record.publication_year and record.authors:
+        normalize = lambda text: ' '.join(re.findall(r'\w+', text.casefold()))
+        authors = '|'.join(sorted(normalize(a) for a in record.authors))
+        result.add(f'conference-bib:{record.conference}:{record.publication_year}:{normalize(record.title)}:{authors}')
     if record.doi:
         result.add(f"doi:{record.doi}")
     if record.arxiv_id:

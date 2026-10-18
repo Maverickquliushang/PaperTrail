@@ -120,12 +120,16 @@ class LatestProviders(Providers):
 
     async def conference_catalog(self, end, limit):
         from scripts.conference_sync import synchronize
+        from scripts.official_conferences import collect_official
         records, reports, state = await synchronize(self, end, getattr(self, 'conference_state', {}),
             seconds=getattr(self, 'conference_seconds', 600))
         self.conference_state = state
+        official, official_reports, official_state = await collect_official(self.client,end.year,getattr(self,'official_state',{}),str(end))
+        self.official_state = official_state
+        records.extend(official);reports.extend(official_reports)
         return LatestData(records=records, reports=reports, retrieved_at=now(), scanned=len(records),
                           partial=any(r['state'] in ('error','partial') for r in reports),
-                          note='分页补采历史并保留断点；收录总量不设篇数上限。')
+                          note='DBLP 历史索引与会议官网公开清单分别采集；收录总量不设篇数上限。')
 
     async def dblp_query(self, query):
         # Public official query service. No OpenAlex headers or private credentials are sent.

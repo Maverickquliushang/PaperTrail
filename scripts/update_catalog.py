@@ -56,6 +56,7 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
     fresh, statuses = [], {}
     providers.conference_state = previous.get("conference_sync", {})
     providers.source_state = previous.get("source_sync", {})
+    providers.official_state = previous.get("official_sync", {})
     for source in config["sources"]:
         records, reports = [], []
         try:
@@ -73,7 +74,7 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
                             "note": exc.message if isinstance(exc, SourceError) else "来源请求未完成，请稍后重试。"})
         old_reports = {r.get("label"): r for r in previous.get("source_status", {}).get(source, {}).get("queries", [])}
         for report in reports:
-            report["updated_at"] = stamp if report["state"] != "error" else old_reports.get(report.get("label"), {}).get("updated_at")
+            report["updated_at"] = stamp if report["state"] != "error" and not report.get('cached') else old_reports.get(report.get("label"), {}).get("updated_at")
         successes = sum(r["state"] != "error" for r in reports)
         state = "error" if not successes else "partial" if successes < len(reports) or any(r["state"] in ("partial", "limited") for r in reports) else "success"
         statuses[source] = {"state": state, "attempted_at": stamp,
@@ -89,8 +90,8 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
             r = PublicRecord.model_validate(evidence)
             if r.source == "openreview" and not r.review_status:
                 r.review_status = "accepted"  # Earlier catalogs only collected accepted papers.
-            if r.source == "conferences" and r.index_provider != "DBLP":
-                continue  # Conference catalog now uses DBLP exclusively.
+            if r.source == "conferences" and r.index_provider in (None, 'OpenAlex'):
+                continue  # Legacy conference OpenAlex records; separate OpenAlex source is retained.
             if r.source in config["sources"] and eligible(r, today):
                 retained[(r.source, r.source_id)] = r
     for r in fresh:
@@ -143,6 +144,7 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
             "conference_catalog": {"names": list(CONFERENCE_SOURCES), "dblp_streams": DBLP_STREAMS, "start_date": None, "counts": conference_counts, "total": sum("conferences" in p["sources"] for p in papers)},
             "conference_sync": getattr(providers, "conference_state", {}),
             "source_sync": getattr(providers, "source_state", {}),
+            "official_sync": getattr(providers, "official_state", {}),
             "papers": papers, "source_status": statuses,
             "recommendations": recommendations, "history": history,
             "notice": "公共 AI 论文库，检索不设统一起始日期；会议论文分页累计收录，无总篇数上限；非全站实时搜索。每日推荐按来源日期浏览累计论文库，支持全部日期与各日篇数；仅年份记录不参与每日列表。"}
