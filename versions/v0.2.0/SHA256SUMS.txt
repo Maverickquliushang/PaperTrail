@@ -1,0 +1,2 @@
+85d67a10232f4ef82854dd15c8805db2e6a47e6c24a389ed90a78f9067d4d10e  PaperTrail-v0.2.0-source.zip
+bdd465a346bb0c11cb6c93bad925b8aa6fa31aa808a92f7be94b1f477281d3bb  PaperTrail-v0.2.0-web.zip

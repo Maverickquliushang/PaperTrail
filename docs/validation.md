@@ -13,7 +13,7 @@
 
 GitHub 云端工作流与 Pages 的实际状态以仓库 Actions / Deployments 为准；离线通过不表示上游永远可用。来源接口变化、配额和网络失败应在页面明确显示。
 
-复现离线测试：在仓库根目录执行 `npm test`；安装 `local/` 的锁定 Python 依赖后，执行 `uv run --project local --locked python -m unittest discover -s tests -p 'test_*.py'`。本地完整回归和前端构建命令见 `local/README.md`。
+复现离线测试：在仓库的 `code/` 目录执行 `npm test`；安装 `local/` 的锁定 Python 依赖后，执行 `uv run --project local --locked python -m unittest discover -s tests -p 'test_*.py'`。本地完整回归和前端构建命令见 `local/README.md`。
 
 - Hugging Face 连续三页实测取得 300 条互不重复记录，且仍提供下一页；验证无 200 条截断。
 

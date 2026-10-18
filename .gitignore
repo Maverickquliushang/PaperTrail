@@ -11,13 +11,16 @@ __pycache__/
 !.env.example
 .secrets/
 config/local/
-local/data/
-local/output/
+code/local/data/
+code/local/output/
 *.local
 *.local.*
 .DS_Store
 Thumbs.db
 # Local agent guidance and publication-only working aids are not product files.
 AGENTS.md
-/project-env.ps1
 /docs/validation.md
+
+# Local release packages and private verification artifacts.
+/versions/**/*.zip
+/output/private/

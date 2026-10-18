@@ -3,12 +3,12 @@
 从一个问题，发现新的论文线索。提供 **本地完整版** 和 **GitHub 网页版**，按需要选择。
 
 - **[打开网页版](https://Maverickquliushang.github.io/PaperTrail/)**：无需安装，浏览论文库和每日推荐。
-- **[安装本地版](local/README.md)**：实时访问论文来源，独立配置推荐，可选飞书群聊。
+- **[安装本地版](code/local/README.md)**：实时访问论文来源，独立配置推荐，可选飞书群聊。
 - [网页版部署说明](docs/github-pages.md) · [功能对比](docs/editions.md)
 
 ## 两种版本的区别
 
-| | 本地版 `local/` | 网页版 `web/` |
+| | 本地版 `code/local/` | 网页版 `code/web/` |
 |---|---|---|
 | 运行方式 | Windows 本机 React + FastAPI | GitHub Pages 静态 HTML / CSS / JavaScript |
 | 需要开电脑吗 | 服务运行期间需要 | 不需要，GitHub Actions 定时采集 |
@@ -21,17 +21,17 @@
 | 中文输入 | 飞书入口提供术语转换；网页实时搜索使用所填关键词 | 检索框提供常见中文术语转换，未知限定明确提示 |
 | AI / 向量检索 | 未接入 | 未接入 |
 
-两版累计库共用采集和展示代码，包括历史断点续采、每日数量、会议分类和 OpenReview 双入口。本地版从工作台的“打开本地累计论文库”进入，数据独立保存在 `local/data/library/`。
+两版累计库共用采集和展示代码，包括历史断点续采、每日数量、会议分类和 OpenReview 双入口。本地版从工作台的“打开本地累计论文库”进入，数据独立保存在 `code/local/data/library/`。
 
-两个版本不要求同时运行，也不共享个人配置。本仓库的 `local/` 是干净的源代码发行版，不包含开发者的密钥、聊天信息、绑定关系或推荐历史。首次安装需自行配置。
+两个版本不要求同时运行，也不共享个人配置。本仓库的 `code/local/` 是干净的源代码发行版，不包含开发者的密钥、聊天信息、绑定关系或推荐历史。首次安装需自行配置。
 
 ## 最快开始
 
 **只想浏览论文：** 打开上方网页版，选择来源专区，留空浏览最新 AI 论文，或输入关键词。默认日期从新到旧，也可选择 BM25。“每日推荐”按论文日期浏览；顶会提供“按年浏览”。会议进度卡片也可点击进入对应会议。
 
-**想要实时检索：** 下载仓库，在 `local/` 中按[本地说明](local/README.md)安装 Python、Node.js、uv 及锁定依赖，然后双击 `启动PaperTrail.cmd`。
+**想要实时检索：** 下载仓库，在 `code/local/` 中按[本地说明](code/local/README.md)安装 Python、Node.js、uv 及锁定依赖，然后双击 `启动PaperTrail.cmd`。
 
-**想拥有自己的站点：** Fork 仓库，启用 Actions，将 Settings → Pages → Source 设置为 GitHub Actions，手动运行 `Update papers and deploy`。编辑 `config/catalog.json` 调整来源与数量。详见[部署说明](docs/github-pages.md)。
+**想拥有自己的站点：** Fork 仓库，启用 Actions，将 Settings → Pages → Source 设置为 GitHub Actions，手动运行 `Update papers and deploy`。编辑 `code/config/catalog.json` 调整来源与数量。详见[部署说明](docs/github-pages.md)。
 
 ## 论文与推荐边界
 
@@ -44,15 +44,34 @@
 ## 仓库结构
 
 ```text
-local/                     本地完整版的源代码、依赖锁与启动器
-web/                       纯静态网页；唯一发布到 Pages 的目录
-web/data/                  公共论文元数据、推荐历史与中文术语表
-scripts/update_catalog.py  Actions 批量采集，不启动服务或飞书
-config/catalog.json        站点所有者的公开采集配置
-.github/workflows/         每日采集部署、双版本自动测试
-tests/                     网页检索与采集回归测试
-docs/                      版本选择和部署说明
+code/                       唯一当前开发入口
+  local/                    React + FastAPI 本地版、依赖锁与启动器
+  web/                      静态网页版及公开论文数据；仅此目录部署到 Pages
+  scripts/                  两版共享采集器、版本打包脚本
+  config/                   公开采集配置
+  tests/                    共享采集与网页测试
+  project-env.ps1           实际环境初始化逻辑
+  .tmp/、.cache/            临时文件与工具缓存（不提交）
+docs/                       设计、部署和本地版使用说明
+output/                     本轮可公开验证报告；私人结果放 private/ 并忽略
+versions/                   已验证版本索引、说明、哈希；ZIP 仅本地保存
+.github/workflows/          必须位于仓库根的 GitHub CI 配置
+README.md、CHANGELOG.md     项目入口和变更记录
+project-env.ps1             转调 code/ 的便利入口
 ```
+
+当前版本以 `code/local/pyproject.toml` 为准，现为 **0.2.0**；沿用已有 API 版本，统一此前滞后的包元数据，不升级依赖。目录迁移说明见 [结构说明](docs/project-structure.md)，验证与归档见 [版本索引](versions/INDEX.md)。`versions/` 只保存交付快照，不在其中继续开发。
+
+从仓库根目录开始开发：
+
+```powershell
+. .\project-env.ps1
+Set-Location code
+npm test
+uv run --project local --locked python -m unittest discover -s tests -p 'test_*.py'
+```
+
+安装并启动本地版：在仓库根目录运行 `& .\code\local\setup.ps1`，完成后双击 `code/local/启动PaperTrail.cmd`。目录迁移前的 `local/` 路径及旧快捷方式需要改到 `code/local/`；网页 URL 和服务 API 保持不变。
 
 浏览器端无服务端依赖。**每日采集任务使用 Python**，复用本地版来源适配器，在 GitHub Actions 执行后结束；它不是长期运行的后端。无数据库、无模型 API、无第三方 CDN 脚本。
 

@@ -2,17 +2,17 @@
 
 ## 使用本仓库部署
 
-1. 将整个仓库放到自己的 GitHub 账号，默认分支为 `main`。不要仅上传 `web/`，因为采集任务还需要 `scripts/`、配置和 `local/backend/`。
+1. 将整个仓库放到自己的 GitHub 账号，默认分支为 `main`。不要仅上传 `code/web/`，因为采集任务还需要 `code/scripts/`、配置和 `code/local/backend/`。
 2. 打开 Settings → Pages → Build and deployment → Source，选择 **GitHub Actions**。
 3. 在 Actions 页面启用工作流，打开 **Update papers and deploy**，点击 **Run workflow**。首次运行会采集论文并部署；可在日志看到每个来源的成功或失败。
 4. 部署完成后，通过 Settings → Pages 或工作流的 deployment 链接打开网站。项目站点通常位于 `https://用户名.github.io/仓库名/`。
 5. 默认每天北京时间 09:00 计划刷新，无需保持本地电脑开启。GitHub 排队可能延迟，不提供准点保证。
 
-Fork 后将 README 和 `web/index.html` 中的源仓库、站点链接改成自己的地址。站点资源本身使用相对路径，兼容仓库子路径。
+Fork 后将 README 和 `code/web/index.html` 中的源仓库、站点链接改成自己的地址。站点资源本身使用相对路径，兼容仓库子路径。
 
 ## 调整来源与数量
 
-编辑 `config/catalog.json`：
+编辑 `code/config/catalog.json`：
 
 - `mode`：固定为 `ai_latest`，按公共 AI 分类采集，没有个人主题。
 - `sources`：五个来源中的一个或多个。
@@ -32,7 +32,7 @@ Fork 后将 README 和 `web/index.html` 中的源仓库、站点链接改成自�
 
 ## 更新失败与持久化
 
-工作流把公开 `web/data/catalog.json` 及 `web/data/papers/` 分片提交回仓库，累计保留历史论文，并保留配置天数内的推荐历史；仅部署 `web/`。需要 Actions 对内容的写入权限；若分支保护阻止机器人写入，需由仓库所有者配置允许的更新流程。不要通过关闭所有保护来排查。
+工作流把公开 `code/web/data/catalog.json` 及 `code/web/data/papers/` 分片提交回仓库，累计保留历史论文，并保留配置天数内的推荐历史；仅部署 `code/web/`。需要 Actions 对内容的写入权限；若分支保护阻止机器人写入，需由仓库所有者配置允许的更新流程。不要通过关闭所有保护来排查。
 
 单个来源失败：保留其历史论文库、显示失败和最后成功更新时间，其他来源继续更新。所有来源失败：部署明确失败状态和保留的旧库，日志给出警告，不伪造新论文；首次运行全失败时站点显示空库。
 
@@ -40,7 +40,7 @@ Fork 后将 README 和 `web/index.html` 中的源仓库、站点链接改成自�
 
 ## 本地预览静态站点
 
-在仓库根目录执行 `python -m http.server 8787 --bind 127.0.0.1 --directory web`，访问 `http://127.0.0.1:8787/`。这仅用于开发预览，线上不需要该服务器。不要直接双击 HTML 文件，因为浏览器会限制读取 JSON。
+在仓库根目录执行 `python -m http.server 8787 --bind 127.0.0.1 --directory code/web`，访问 `http://127.0.0.1:8787/`。这仅用于开发预览，线上不需要该服务器。不要直接双击 HTML 文件，因为浏览器会限制读取 JSON。
 
 ## 官方参考
 

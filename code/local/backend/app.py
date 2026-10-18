@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import tomllib
 import json
 import os
 from contextlib import asynccontextmanager
@@ -81,7 +82,8 @@ def get_recommendations(request: Request, source: Source | None):
     return request.app.state.source_recommendations[source] if source else request.app.state.recommendations
 
 
-app = FastAPI(title="PaperTrail", version="0.2.0", lifespan=lifespan)
+APP_VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+app = FastAPI(title="PaperTrail", version=APP_VERSION, lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
 
 
