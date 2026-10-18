@@ -1,22 +1,57 @@
 import {sourceNames, translateQuery, search, sortPapers, safeLink, conferenceNames, reviewNames, dblpStreams, scopedPapers} from './search.js';
 const $ = id => document.getElementById(id);
 const descriptions = {all:'浏览全部已采集来源',arxiv:'追踪各学科的预印本研究',openalex:'学术文献索引与发表信息',huggingface:'社区收录的机器学习论文',conferences:'11 个会议的论文集索引',openreview:'已录用论文与公开投稿分开浏览'};
+let routeVersion = 0, loading = false;
+const shardCache = new Map();
 let catalog, terms, page = 1, source = 'all', mode = 'search', conference = 'all', review = 'accepted';
 function element(tag, text, className) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; }
 function link(text, href) { const node = element('a', text); const safe = safeLink(href); if (safe) { node.href = safe; node.target = '_blank'; node.rel = 'noopener noreferrer'; } return node; }
 function formatted(value) { return value ? new Date(value).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai',hour12:false}) : '尚无成功更新'; }
-function setRoute() {
+async function loadPapers(wantedSource, wantedConference) {
+  const shards = (catalog.paper_shards || []).filter(s => (wantedSource === 'all' || s.sources.includes(wantedSource)) && (wantedSource !== 'conferences' || wantedConference === 'all' || s.conferences.includes(wantedConference)));
+  let cursor = 0;
+  await Promise.all(Array.from({length:Math.min(4,shards.length)},async () => {
+    while (cursor < shards.length) {
+      const shard = shards[cursor++];
+      if (!/^papers\/part-[a-f0-9]+\.json$/.test(shard.file)) throw new Error('论文分片路径不正确');
+      if (!shardCache.has(shard.file)) shardCache.set(shard.file,fetch('./data/'+shard.file).then(async response => {
+        if (!response.ok) throw new Error('论文分片加载失败，请刷新重试');
+        const papers = await response.json();
+        if (!Array.isArray(papers)) throw new Error('论文分片格式不正确');
+        return papers;
+      }).catch(error => {shardCache.delete(shard.file); throw error;}));
+      await shardCache.get(shard.file);
+    }
+  }));
+  return [...new Map([...(catalog.inline_papers || []),...(await Promise.all(shards.map(s => shardCache.get(s.file)))).flat()].map(p => [p.id,p])).values()];
+}
+async function setRoute() {
+  const version = ++routeVersion;
   const parts = location.hash.slice(2).split('/');
   source = Object.hasOwn(sourceNames, parts[0]) ? parts[0] : 'all'; mode = parts[1] === 'daily' ? 'daily' : 'search'; page = 1;
   conference = source === 'conferences' && conferenceNames.includes(parts[2]) ? parts[2] : 'all';
   review = source === 'openreview' && parts[2] === 'public' ? 'public' : 'accepted';
   const suffix = source === 'conferences' ? `/${conference}` : source === 'openreview' ? `/${review}` : '';
   $('workspace-title').textContent = (sourceNames[source] || '综合工作台') + (source === 'conferences' && conference !== 'all' ? ` · ${conference}` : source === 'openreview' ? ` · ${review === 'public' ? '公开投稿' : '已录用'}` : '');
-  for (const node of $('sources').children) { node.classList.toggle('active', node.dataset.source === source); node.setAttribute('aria-current', node.dataset.source === source ? 'page' : 'false'); }
+  for (const node of $('sources').children) { node.href = `#/${node.dataset.source}/${mode}`; node.classList.toggle('active', node.dataset.source === source); node.setAttribute('aria-current', node.dataset.source === source ? 'page' : 'false'); }
   for (const node of $('modes').children) { node.href = `#/${source}/${node.dataset.mode}${suffix}`; node.classList.toggle('active', node.dataset.mode === mode); }
   $('search-form').hidden = mode !== 'search'; $('start-wrap').hidden = mode !== 'search'; $('end-wrap').hidden = mode !== 'search'; $('history-wrap').hidden = mode !== 'daily';
   renderDirectory();
-  render();
+  updateHistoryLabels();
+  loading = true;
+  $('results').replaceChildren(element('p','正在加载已收录论文…'));
+  $('result-summary').textContent = '';
+  try {
+    const loaded = mode === 'search' ? await loadPapers(source,conference) : [];
+    if (version !== routeVersion) return;
+    catalog.papers = loaded;
+    loading = false;
+    render();
+  } catch (error) {
+    if (version !== routeVersion) return;
+    loading = false;
+    $('results').replaceChildren(element('p',error.message,'error'));
+  }
 }
 function visibleReports(status) {
   return (status?.queries || []).filter(r =>
@@ -25,15 +60,28 @@ function visibleReports(status) {
 }
 function renderDirectory() {
   $('subdirectory').hidden = !['conferences','openreview'].includes(source);
-  $('subnav').replaceChildren(); $('directory-links').replaceChildren();
+  $('subnav').replaceChildren(); $('directory-links').replaceChildren(); $('collection-progress').replaceChildren();
   if (source === 'conferences') {
     for (const name of ['all',...conferenceNames]) {
-      const count = scopedPapers(catalog.papers,'conferences',name).length;
+      const count = (name === 'all' ? catalog.conference_catalog?.total : catalog.conference_catalog?.counts?.[name]) ?? scopedPapers(catalog.inline_papers || catalog.papers,'conferences',name).length;
       const a = element('a',name === 'all' ? '全部会议' : name); a.href = `#/conferences/${mode}/${name}`;
       a.dataset.conference = name; a.classList.toggle('active',name === conference); a.setAttribute('aria-current',name === conference ? 'page' : 'false');
       a.append(element('small',`${count} 篇`)); $('subnav').append(a);
     }
-    $('scope-note').textContent = '会议论文库不设起始日期，历史论文持续保留。OpenAlex 和 DBLP 按会议独立采集，每个索引每会每轮至多 100 条候选；下方检索仅限本站已收录内容。每日推荐仍单独按当日日期筛选。';
+    $('scope-note').textContent = '不限制收录篇数，也不设起始日期。历史论文逐页补采并保存断点，每天检查新增；遇到限流会暂停后续接。计数是本站去重后的收录量，不是会议官网总量。';
+    for (const name of conference === 'all' ? conferenceNames : [conference]) {
+      const row = element('div',undefined,'collection-row');
+      row.append(element('strong',`${name} · 本站已收录 ${catalog.conference_catalog?.counts?.[name] ?? 0} 篇`));
+      for (const index of ['OpenAlex','DBLP']) {
+        const entry = catalog.conference_sync?.[index+':'+name], h = entry?.history;
+        const status = entry?.error ? '访问受限 / 等待重试' : h?.complete ? '本轮历史索引已遍历' : h ? '历史补采中' : '等待开始补采';
+        row.append(element('p',`${index}：${status}${h ? ` · 已检查 ${h.scanned} / ${h.total ?? '未知'} 条索引记录（${h.pages} 页）` : ''}`));
+        if (h?.total > 0) { const bar = element('progress');bar.max=h.total;bar.value=Math.min(h.scanned,h.total);bar.setAttribute('aria-label',`${name} ${index} 历史分页进度`);row.append(bar); }
+        if (entry?.recent) row.append(element('small',`新增检查：${entry.recent.start} 至 ${entry.recent.end} · ${entry.recent.complete ? '已完成' : '分页进行中'}，已检查 ${entry.recent.scanned} 条。`));
+        if (entry?.error) row.append(element('small',entry.error));
+      }
+      $('collection-progress').append(row);
+    }
     for (const name of conference === 'all' ? conferenceNames : [conference]) $('directory-links').append(link(`${name} · DBLP 历年目录 ↗`,`https://dblp.org/db/conf/${dblpStreams[name]}/index.html`));
   } else if (source === 'openreview') {
     for (const [key,label] of [['accepted','已录用'],['public','公开投稿']]) {
@@ -95,8 +143,21 @@ function emptyMessage() {
     (source === 'conferences' ? ' 顶会专区按 OpenAlex / DBLP 会议索引收录；可用上方 DBLP 目录查看其他年份，收录不保证完整。' : '') +
     ' 可切换“全部来源”浏览其他已收录论文。';
 }
+function dailyPapers(day) {
+  const entries = source === 'openreview' && review === 'public' ? [['openreview',day?.openreview_public || {state:'error',papers:[]}]] : Object.entries(day?.recommendations || {}).filter(([key]) => source === 'all' || key === source);
+  const papers = scopedPapers([...new Map(entries.flatMap(([,item]) => item.papers).map(p => [p.id,p])).values()],source,conference,review);
+  return {entries,papers};
+}
+function updateHistoryLabels() {
+  for (const option of $('history').options) {
+    const day = catalog.history.find(h => h.date === option.value);
+    const {entries,papers} = dailyPapers(day);
+    const incomplete = entries.some(([,item]) => item.state !== 'success');
+    option.textContent = `${option.value} · ${papers.length} 篇${incomplete ? '（采集未完整）' : ''}`;
+  }
+}
 function render() {
-  if (!catalog) return;
+  if (!catalog || loading) return;
   $('error').hidden = true; let papers = [];
   try {
     if (mode === 'search') {
@@ -109,7 +170,7 @@ function render() {
       const entries = (source === 'openreview' && review === 'public' ? [['openreview',day?.openreview_public || {state:'error',papers:[]}]] : Object.entries(day?.recommendations || {}).filter(([key]) => source === 'all' || key === source));
       papers = sortPapers(scopedPapers([...new Map(entries.flatMap(([, item]) => item.papers).map(p => [p.id,p])).values()], source, conference, review), $('sort').value);
       const failures = entries.filter(([,item]) => item.state !== 'success').map(([key]) => sourceNames[key]);
-      $('query-note').textContent = `AI 当日论文：仅选来源标注日期为 ${$('history').value} 的论文，每来源最多 10 篇，综合视图合并去重。${source === 'openreview' && review === 'public' ? ' 公开投稿不代表已录用或质量认可。' : ''}` + (failures.length ? ` 该日未完整采集：${failures.join('、')}。已有内容请结合日期查看。` : '');
+      $('query-note').textContent = `AI 当日论文：仅选来源标注日期为 ${$('history').value} 的论文，符合条件的已收录论文全部展示，综合视图合并去重。${source === 'openreview' && review === 'public' ? ' 公开投稿不代表已录用或质量认可。' : ''}` + (failures.length ? ` 该日未完整采集：${failures.join('、')}。已有内容请结合日期查看。` : '');
     }
   } catch (error) { $('error').textContent = error.message; $('error').hidden = false; }
   const pages = Math.max(1, Math.ceil(papers.length / 10)); page = Math.min(page, pages);
@@ -134,8 +195,32 @@ try {
   [catalog, terms] = await Promise.all(['catalog','terms'].map(async name => { const response = await fetch(`./data/${name}.json`,{cache:'no-cache'}); if (!response.ok) throw new Error(`数据读取失败（${response.status}）`); return response.json(); }));
   if (catalog.schema !== 2 || catalog.mode !== 'ai_latest' || !Array.isArray(catalog.papers)) throw new Error('论文库格式不正确。');
   const failed = Object.values(catalog.source_status).filter(s => s.state !== 'success').length;
-  $('update').textContent = `论文库更新：${formatted(catalog.updated_at)}（北京时间） · ${catalog.papers.length} 篇` + (failed ? ` · ${failed} 个来源未完整更新，详情见来源状态。` : '') + (catalog.notice ? ` · ${catalog.notice}` : '');
+  $('update').textContent = `论文库更新：${formatted(catalog.updated_at)}（北京时间） · ${catalog.paper_count ?? catalog.papers.length} 篇` + (failed ? ` · ${failed} 个来源未完整更新，详情见来源状态。` : '') + (catalog.notice ? ` · ${catalog.notice}` : '');
   for (const entry of [...catalog.history].reverse()) { const option = element('option',entry.date); option.value = entry.date; $('history').append(option); }
+  catalog.inline_papers = catalog.papers;
   $('query').value = '';
   setRoute();
 } catch (error) { $('update').textContent = `无法加载论文库：${error.message} 请刷新重试。`; $('error').hidden = false; $('error').textContent = '需通过 HTTP 网页访问，不能直接双击 index.html；可使用 GitHub Pages 或本地预览服务器。'; }
+
+if (location.pathname.startsWith('/library')) {
+  $('local-controls').hidden = false;
+  document.querySelector('.intro > p.muted').textContent = '本地累计论文库：本机分页采集与保存，会议目录、每日数量和补采进度与网页版同步。';
+  let wasRunning = false;
+  const checkLocal = async () => {
+    try {
+      const response = await fetch('/api/library');
+      if (!response.ok) throw new Error();
+      const state = await response.json();
+      $('sync-library').disabled = state.running;
+      $('sync-status').textContent = state.running ? '正在分页采集，本轮完成后自动刷新…' : state.error || '本地论文库 · 每天 09:00 更新，运行期间自动续接历史';
+      if (wasRunning && !state.running && !state.error) location.reload();
+      wasRunning = state.running;
+    } catch { $('sync-status').textContent = '本地服务状态读取失败，请刷新重试。'; }
+  };
+  $('sync-library').addEventListener('click',async () => {
+    const response = await fetch('/api/library/sync',{method:'POST'});
+    if (!response.ok) { $('sync-status').textContent = '未能启动更新，请重试。'; return; }
+    await checkLocal();
+  });
+  checkLocal(); setInterval(checkLocal,10000);
+}

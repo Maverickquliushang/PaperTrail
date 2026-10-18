@@ -55,12 +55,12 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         data = await FakeLatest(fail_one=True).latest('openreview', date(2026,9,19), date(2026,10,18), 100)
         self.assertTrue(data.partial)
 
-    async def test_each_conference_has_independent_limit_without_lower_date(self):
+    async def test_each_conference_has_history_and_recent_pagination(self):
         provider=FakeLatest()
         data=await provider.latest('conferences', date(2026,9,19), date(2026,10,18), 100)
         calls=[p for source,_,p in provider.calls if source=='conferences']
-        self.assertEqual(len(calls),11)
-        self.assertTrue(all('from_publication_date' not in p['filter'] for p in calls))
+        self.assertEqual(len(calls),22)
+        self.assertEqual(sum('from_publication_date' not in p['filter'] for p in calls),11)
         self.assertTrue(all(p['per_page']==100 for p in calls))
         self.assertEqual(len(data.reports),22)
 

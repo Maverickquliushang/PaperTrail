@@ -8,14 +8,15 @@
   <script type="module" src="./app.js"></script>
 </head>
 <body>
-  <header><a class="brand" href="#/all/search">PaperTrail <span>论文踪迹</span></a><a href="https://github.com/Maverickquliushang/PaperTrail" target="_blank" rel="noopener noreferrer">代码与版本选择 ↗</a></header>
+  <header><a class="brand" href="#/all/search">PaperTrail <span>论文踪迹</span></a><a href="https://github.com/Maverickquliushang/PaperTrail" target="_blank" rel="noopener noreferrer" class="github-link" aria-label="GitHub：代码与版本选择（新窗口）"><svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.3c-3.3.7-4-1.4-4-1.4-.5-1.4-1.3-1.7-1.3-1.7-1.1-.8.1-.8.1-.8 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6a4.7 4.7 0 0 1 1.2-3.2c-.1-.3-.5-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.8 18.3 5 18.3 5c.6 1.6.2 2.9.1 3.2a4.7 4.7 0 0 1 1.2 3.2c0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.5c0 .3.2.7.8.6A12 12 0 0 0 12 .3Z"/></svg><span>GitHub · 代码与版本选择 ↗</span></a></header>
   <main>
     <section class="intro"><p class="eyebrow">PAPERS, WITH A TRAIL.</p><h1>从一个问题，发现新的线索。</h1><p>AI 最新论文 · 无预设个人研究主题</p><p class="muted">GitHub 网页版：搜索定期更新的论文库，无需启动本地服务。</p></section>
+    <div id="local-controls" hidden><a href="/">← 返回本地工作台</a><button id="sync-library" type="button">更新本地论文库</button><span id="sync-status" role="status"></span></div>
     <div id="update" class="notice" role="status">正在读取论文库…</div>
     <nav id="sources" aria-label="来源专区"></nav>
     <section class="workspace" aria-labelledby="workspace-title">
       <div class="section-head"><h2 id="workspace-title">综合工作台</h2><nav id="modes" aria-label="功能"><a data-mode="search" href="#/all/search">论文检索</a><a data-mode="daily" href="#/all/daily">每日推荐</a></nav></div>
-      <section id="subdirectory" hidden aria-label="专区二级目录"><nav id="subnav" aria-label="分类入口"></nav><p id="scope-note" class="muted"></p><div id="directory-links" class="directory-links"></div></section>
+      <section id="subdirectory" hidden aria-label="专区二级目录"><nav id="subnav" aria-label="分类入口"></nav><p id="scope-note" class="muted"></p><details class="progress-panel" open><summary>收录数量与历史补采进度</summary><p class="muted">已检查条数包含重复和不符合条件的记录，不等于新增论文数；遍历完成仅指当前来源索引，来源缺失仍可能存在。</p><div id="collection-progress"></div></details><div id="directory-links" class="directory-links"></div></section>
       <form id="search-form" autocomplete="off"><label for="query">关键词（可选）</label><div class="search-row"><input id="query" type="search" placeholder="留空浏览最新 AI 论文，或输入关键词" maxlength="250"><button type="submit">检索论文 →</button></div><p class="muted">已收录论文的标题与摘要检索；支持常用中文术语转换。留空可浏览全部。</p></form>
       <div class="filters">
         <label id="start-wrap">开始日期<input id="start" type="date"></label><label id="end-wrap">结束日期<input id="end" type="date"></label>
@@ -27,7 +28,7 @@
       <div id="result-summary" aria-live="polite"></div><div id="results"></div>
       <nav class="pagination" aria-label="结果翻页"><button id="previous" type="button">← 上一页</button><span id="page-label"></span><button id="next" type="button">下一页 →</button></nav>
     </section>
-    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期；OpenReview 已录用使用录用日期，其他公开投稿使用创建日期；DBLP 仅提供年份时不补造月日。每日推荐仅收录标注日期为当天的论文，每来源最多 10 篇。</footer>
+    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期；OpenReview 已录用使用录用日期，其他公开投稿使用创建日期；DBLP 仅提供年份时不补造月日。每日推荐仅收录标注日期为当天的论文，不限制展示篇数。</footer>
   </main>
 </body>
 </html>

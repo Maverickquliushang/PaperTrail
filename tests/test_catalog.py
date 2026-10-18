@@ -5,7 +5,7 @@ from backend.models import Record, SourceData
 from backend.sources import SourceError
 
 CONFIG = {'mode':'ai_latest', 'sources':['arxiv','openalex'],
-          'community_feed_days':30,'candidate_limit':100,'recommendation_limit':10,'history_days':30}
+          'community_feed_days':30,'candidate_limit':100,'history_days':30}
 NOW = datetime(2026,10,18,9,tzinfo=BEIJING)
 def record(i=1, source='arxiv', day='2026-10-18'):
     return Record(source=source,source_id=str(i),title='Graph neural networks',
@@ -17,11 +17,11 @@ class Provider:
         if source in self.failed: raise SourceError('rate_limited','来源限流')
         return SourceData(records=[record(i,source) for i in range(1,16)]+[record(99,source,'2099-12-31')], retrieved_at=NOW.isoformat())
 class CatalogTests(unittest.IsolatedAsyncioTestCase):
-    async def test_merge_future_and_per_source_cap(self):
+    async def test_merge_future_without_daily_cap(self):
         data=await collect(CONFIG,{},Provider(),NOW)
         self.assertEqual(len(data['papers']),15)
         self.assertEqual(data['papers'][0]['sources'],['arxiv','openalex'])
-        self.assertTrue(all(len(r['papers'])==10 for r in data['recommendations'].values()))
+        self.assertTrue(all(len(r['papers'])==15 for r in data['recommendations'].values()))
     async def test_failure_retains_catalog_without_fake_fresh_recommendation(self):
         old=await collect(CONFIG,{},Provider(),NOW)
         next_day=NOW.replace(day=19)
@@ -34,7 +34,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         first=await collect(CONFIG,{},Provider(),NOW)
         retry=await collect(CONFIG,first,Provider(),NOW)
         self.assertEqual(len(retry['history']),1)
-        self.assertEqual(len(retry['recommendations']['arxiv']['papers']),10)
+        self.assertEqual(len(retry['recommendations']['arxiv']['papers']),15)
         later=await collect(CONFIG,retry,Provider(),NOW.replace(day=19))
         self.assertEqual(len(later['recommendations']['arxiv']['papers']),0)
     async def test_partial_sources_explicit(self):
@@ -43,7 +43,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data['source_status']['arxiv']['state'],'success')
         self.assertEqual(data['recommendations']['openalex']['papers'],[])
     def test_invalid_config(self):
-        with self.assertRaises(ValueError): validate_config({**CONFIG,'recommendation_limit':11})
+        with self.assertRaises(ValueError): validate_config({**CONFIG,'candidate_limit':0})
         with self.assertRaises(ValueError): validate_config({**CONFIG,'sources':['typo']})
 
     async def test_legacy_personal_catalog_is_not_retained(self):

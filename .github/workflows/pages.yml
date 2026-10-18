@@ -4,6 +4,8 @@ on:
   schedule:
     # UTC 01:00 = Asia/Shanghai 09:00. GitHub may delay scheduled jobs.
     - cron: '0 1 * * *'
+    # Continue saved history pages; the collector skips when no resumable work remains.
+    - cron: '17 * * * *'
   push:
     branches: [main]
     paths:
@@ -42,13 +44,14 @@ jobs:
           uv run --project local --locked python -m unittest discover -s tests -p 'test_*.py'
       - name: Collect public metadata
         env:
+          PAPERTRAIL_BACKFILL_ONLY: ${{ github.event_name == 'schedule' && github.event.schedule == '17 * * * *' }}
           OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
         run: uv run --project local --locked python scripts/update_catalog.py
       - name: Preserve public catalog and recommendation history
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add web/data/catalog.json
+          git add web/data/catalog.json web/data/papers
           if ! git diff --cached --quiet; then
             git commit -m 'Update public paper catalog [skip ci]'
             git pull --rebase origin main

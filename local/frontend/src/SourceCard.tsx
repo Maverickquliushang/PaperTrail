@@ -8,10 +8,10 @@ const introductions: Record<Source, string> = {
   openreview: '直接连接 OpenReview，检索 ICLR、ICML、NeurIPS 已录用主会论文。',
 };
 
-export function SourceCard({ source, index }: {
-  source: Source; index: number;
+export function SourceCard({ source, index, mode = 'search' }: {
+  source: Source; index: number; mode?: 'search' | 'daily';
 }) {
-  return <a className={`source-card ${source}`} href={`#/sources/${source}/search`}
+  return <a className={`source-card ${source}`} href={`#/sources/${source}/${mode}`}
     aria-label={`进入 ${sourceNames[source]} 专区`}
     onPointerMove={event => {
       if (event.pointerType !== 'mouse') return;

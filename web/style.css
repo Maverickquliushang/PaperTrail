@@ -5,3 +5,7 @@
 @media(prefers-reduced-motion:reduce){*,*:before{transition:none!important;transform:none!important}}
 
 #subdirectory{padding:20px;border:1px solid var(--line);border-radius:12px;background:#edf1e7;margin-bottom:24px}#subnav,.directory-links{display:flex;flex-wrap:wrap;gap:10px}#subnav a{display:block;padding:9px 15px;border:1px solid var(--line);border-radius:10px;text-decoration:none;background:#fdfefb;transition:transform .18s,border-color .18s,box-shadow .18s}#subnav a:hover{transform:translateY(-2px);border-color:#829d70;box-shadow:0 5px 12px #233c3015}#subnav a.active{background:var(--accent);color:white;border-color:var(--accent)}#subnav small{margin-left:8px;opacity:.8}.directory-links a{font-size:15px}#scope-note{margin:14px 0}.review-badge{padding:2px 8px;border-radius:5px;background:#f5ead7;color:#795322}
+
+#collection-progress{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}.collection-row{background:var(--paper,#fff);border:1px solid #dce4d5;padding:16px;border-radius:12px}.collection-row p{margin:8px 0}.collection-row small{display:block}.collection-row progress{width:100%;accent-color:#365f4b}.progress-panel{margin:18px 0}
+
+.github-link{display:inline-flex;align-items:center;gap:8px}.github-link svg{flex:none}#local-controls{display:flex;gap:16px;align-items:center;flex-wrap:wrap}#local-controls[hidden]{display:none}@media(max-width:520px){header{gap:16px;flex-wrap:wrap}.github-link{font-size:15px}}

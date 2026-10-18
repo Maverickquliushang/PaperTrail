@@ -18,8 +18,10 @@ from .recommendations import RecommendationService, RecommendationSettings
 from .search import Cache, SearchService
 from .sources import Providers, SourceError
 from .feishu import FeishuService, Credentials, PushSettings
+from .library import LibraryService, REPOSITORY
 
 ROOT = Path(__file__).resolve().parents[1]
+LIBRARY_ROOT = ROOT
 RECOMMENDATIONS_PATH = ROOT / "data/recommendations.json"
 FEISHU_CONFIG_PATH = ROOT / "config/local/feishu.json"
 FEISHU_STATE_PATH = ROOT / "data/feishu-deliveries.json"
@@ -41,11 +43,13 @@ async def lifespan(app: FastAPI):
             lambda: {"all": app.state.recommendations, **app.state.source_recommendations},
             FEISHU_CONFIG_PATH, FEISHU_STATE_PATH)
         app.state.feishu.start_listener()
+        app.state.library = LibraryService(LIBRARY_ROOT, client)
         # One dispatcher serializes daily jobs across workspaces and shares provider limits.
         dispatcher = asyncio.create_task(recommendation_dispatcher(app))
         yield
         dispatcher.cancel()
         await asyncio.gather(dispatcher, return_exceptions=True)
+        await app.state.library.close()
         await app.state.feishu.close()
         for service in recommendation_services(app):
             await service.close()
@@ -58,6 +62,7 @@ def recommendation_services(app):
 
 async def recommendation_dispatcher(app):
     while True:
+        await app.state.library.tick()
         for service in recommendation_services(app):
             if any(s.runner and not s.runner.done() for s in recommendation_services(app)):
                 break
@@ -232,6 +237,28 @@ async def events(identifier: str, request: Request):
 
     return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
+
+@app.get("/api/library")
+async def library_status(request: Request):
+    return request.app.state.library.overview()
+
+
+@app.post("/api/library/sync")
+async def library_sync(request: Request):
+    return request.app.state.library.start()
+
+
+# Shared presentation, separate local data and scheduler. No private state is served here.
+(ROOT / 'data/library').mkdir(parents=True, exist_ok=True)
+@app.get('/library/data/terms.json')
+async def library_terms():
+    return FileResponse(REPOSITORY / 'web/data/terms.json')
+
+
+app.mount('/library/data', StaticFiles(directory=ROOT / 'data/library'), name='library-data')
+
+
+app.mount('/library', StaticFiles(directory=REPOSITORY / 'web', html=True), name='library')
 
 DIST = ROOT / "frontend/dist"
 if (DIST / "assets").is_dir():

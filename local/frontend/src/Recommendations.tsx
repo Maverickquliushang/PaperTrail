@@ -112,7 +112,7 @@ export function Recommendations({ openPaper, source = null }: { openPaper: (pape
       <label className="topic-field"><span className="field-label">排除词或短语（可选，每行一个）</span><textarea aria-label="推荐排除词" rows={2} value={exclusions} placeholder="标题或摘要含这些词时不推荐" disabled={working} onChange={e => { setExclusions(e.target.value); setDirty(true); setNotice(''); }} /></label>
       <div className="daily-fields">
         <label>每日时间（北京时间）<input type="time" value={settings.time} onChange={e => update({ time: e.target.value })} /></label>
-        <label>最多推荐篇数<input type="number" min={1} max={50} value={settings.count} onChange={e => update({ count: Number(e.target.value) })} /></label>
+        <label>推荐篇数（0 = 全部符合条件）<input type="number" min={0} max={50} value={settings.count} onChange={e => update({ count: Number(e.target.value) })} /></label>
         <label>回溯天数<input type="number" min={1} max={365} value={settings.lookback_days} onChange={e => update({ lookback_days: Number(e.target.value) })} /></label>
         <label>历史去重天数<input type="number" min={1} max={365} value={settings.dedup_days} onChange={e => update({ dedup_days: Number(e.target.value) })} /></label>
       </div>

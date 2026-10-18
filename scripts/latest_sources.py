@@ -15,6 +15,30 @@ class LatestData(SourceData):
 
 
 class LatestProviders(Providers):
+    async def daily_pages(self, source, end):
+        records, offset, cursor = [], 0, '*'
+        while True:
+            if source == 'arxiv':
+                categories = ' OR '.join('cat:' + c for c in ('cs.AI','cs.LG','cs.CL','cs.CV','cs.NE','stat.ML'))
+                body = await self.request(source,'https://export.arxiv.org/api/query',{
+                    'search_query':f'({categories}) AND submittedDate:[{end:%Y%m%d}0000 TO {end:%Y%m%d}2359]',
+                    'start':offset,'max_results':100,'sortBy':'submittedDate','sortOrder':'ascending'})
+                batch,total = parse_arxiv(body,now())
+                if not batch and offset < total: raise SourceError('incomplete_page','当日分页提前为空，未完整采集。')
+                records.extend(batch); offset += len(batch)
+                if offset >= total: break
+            else:
+                payload = json.loads(await self.request(source,'https://api.openalex.org/works',{
+                    'filter':f'primary_topic.subfield.id:1702,from_publication_date:{end},to_publication_date:{end}',
+                    'sort':'publication_date:asc','per_page':100,'cursor':cursor}))
+                batch,total = parse_openalex(payload,now())
+                records.extend(batch)
+                next_cursor = payload.get('meta',{}).get('next_cursor')
+                if not next_cursor: break
+                if next_cursor == cursor: raise SourceError('invalid_cursor','当日分页游标重复，未完整采集。')
+                cursor = next_cursor
+        return records
+
     async def latest(self, source, start, end, limit):
         stamp = now()
         partial = False
@@ -51,48 +75,29 @@ class LatestProviders(Providers):
             note = 'Hugging Face 月度 Daily Papers 候选；日期使用原论文 publishedAt，社区收录日不作为发表日。'
         else:
             return await self.openreview_catalog(end, limit)
+        if source in ('arxiv','openalex'):
+            try:
+                records.extend(await asyncio.wait_for(self.daily_pages(source,end),180))
+            except (SourceError,asyncio.TimeoutError):
+                partial = True
         scanned = len(records)
         records = list({r.source_id: r for r in records if r.filter_date and r.filter_date <= str(end)}.values())
         records.sort(key=lambda r: (r.filter_date, r.source_id), reverse=True)
         if partial:
             note += '部分子请求失败，当前仅展示成功返回的候选。'
-        note += f' 每个列表至多读取 {limit} 条候选，不保证全量覆盖。'
-        return LatestData(records=records[:limit], total=total, scanned=scanned,
+        note += f' 近期检索种子每列表读取 {limit} 条；arXiv / OpenAlex 当日列表另行分页读取，不限制推荐展示数量。'
+        return LatestData(records=records, total=total, scanned=scanned,
                           limited=total is None or total > limit, partial=partial,
                           note=note, retrieved_at=stamp)
 
     async def conference_catalog(self, end, limit):
-        """Query each venue independently, with no lower publication-date bound."""
-        records, reports = [], []
-        stamp = now()
-        for name, identifiers in CONFERENCE_SOURCES.items():
-            try:
-                body = await self.request('conferences', 'https://api.openalex.org/works', {
-                    'filter': f'primary_location.source.id:{"|".join(identifiers)},to_publication_date:{end}',
-                    'sort': 'publication_date:desc', 'per_page': limit})
-                payload = json.loads(body)
-                parsed, total = parse_openalex(payload, stamp)
-                accepted = []
-                for record, item in zip(parsed, payload['results']):
-                    identifier = ((item.get('primary_location') or {}).get('source') or {}).get('id', '').rsplit('/', 1)[-1]
-                    if identifier in identifiers and record.filter_date and record.filter_date <= str(end):
-                        record.source, record.conference = 'conferences', name
-                        accepted.append(record)
-                records.extend(accepted)
-                reports.append({'conference': name, 'index_provider': 'OpenAlex', 'label': name + ' · OpenAlex',
-                                'state': 'limited' if total > limit else 'success',
-                                'count': len(accepted), 'total': total,
-                                'note': f'不设起始日期；本轮取该会议最新至多 {limit} 篇。仅代表 OpenAlex 论文集索引，非会议官网全集。'})
-            except Exception as exc:
-                reports.append({'conference': name, 'index_provider': 'OpenAlex', 'label': name + ' · OpenAlex', 'state': 'error', 'count': 0,
-                                'note': exc.message if isinstance(exc, SourceError) else '会议索引请求未完成，请稍后重试。'})
-        dblp_records, dblp_reports = await self.dblp_catalog(end, limit)
-        records.extend(dblp_records)
-        reports.extend(dblp_reports)
-        return LatestData(records=records, reports=reports, retrieved_at=stamp,
-                          scanned=len(records), partial=any(r['state'] == 'error' for r in reports),
-                          limited=any(r['state'] == 'limited' for r in reports),
-                          note='分会议采集，不设起始日期；历史记录不因超过 30 天而移除。')
+        from scripts.conference_sync import synchronize
+        records, reports, state = await synchronize(self, end, getattr(self, 'conference_state', {}),
+            seconds=getattr(self, 'conference_seconds', 600))
+        self.conference_state = state
+        return LatestData(records=records, reports=reports, retrieved_at=now(), scanned=len(records),
+                          partial=any(r['state'] in ('error','partial') for r in reports),
+                          note='分页补采历史并保留断点；收录总量不设篇数上限。')
 
     async def dblp_body(self, params):
         # Never reuse the OpenAlex request helper: its Authorization header is host-specific.
@@ -106,24 +111,6 @@ class LatestProviders(Providers):
                 if len(body) > 8 * 1024 * 1024:
                     raise SourceError('response_too_large', 'DBLP 响应超过本次大小上限。')
         return json.loads(body)
-
-    async def dblp_catalog(self, end, limit):
-        records, reports, unavailable = [], [], None
-        for name, stream in DBLP_STREAMS.items():
-            try:
-                if unavailable:
-                    raise SourceError('dblp_unavailable', unavailable)
-                payload = await self.dblp_body({'q': f'stream:conf/{stream}:', 'format': 'json', 'h': limit})
-                parsed, total = parse_dblp(payload, name, now(), end.year)
-                records.extend(parsed)
-                reports.append({'conference': name, 'index_provider': 'DBLP', 'label': name + ' · DBLP',
-                                'state': 'limited' if total > limit else 'success', 'count': len(parsed), 'total': total,
-                                'note': f'不设起始日期；本轮读取至多 {limit} 条会议流候选。仅提供年份时不补造月日、不进入当日推荐；摘要通常缺失。'})
-            except Exception as exc:
-                unavailable = exc.message if isinstance(exc, SourceError) else 'DBLP 本轮请求失败，后续会议暂缓请求；可打开 DBLP 会议目录。'
-                reports.append({'conference': name, 'index_provider': 'DBLP', 'label': name + ' · DBLP',
-                                'state': 'error', 'count': 0, 'note': unavailable})
-        return records, reports
 
     async def openreview_catalog(self, end, limit):
         records, reports = {}, []

@@ -10,3 +10,7 @@ def isolated_recommendation_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(module, "RECOMMENDATIONS_PATH", tmp_path / "api-recommendations.json")
     monkeypatch.setattr(module, "FEISHU_CONFIG_PATH", tmp_path / "feishu.json")
     monkeypatch.setattr(module, "FEISHU_STATE_PATH", tmp_path / "feishu-deliveries.json")
+    monkeypatch.setattr(module, "LIBRARY_ROOT", tmp_path)
+    async def no_archive_network(self):
+        pass
+    monkeypatch.setattr(module.LibraryService, 'tick', no_archive_network)

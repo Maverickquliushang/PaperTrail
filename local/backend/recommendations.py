@@ -23,7 +23,7 @@ class RecommendationSettings(BaseModel):
     exclude_keywords: list[str] = Field(default_factory=list, max_length=30)
     time: str = Field(default="09:00", pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d$")
     timezone: Literal["Asia/Shanghai"] = "Asia/Shanghai"
-    count: int = Field(default=10, ge=1, le=50)
+    count: int = Field(default=0, ge=0, le=50)
     lookback_days: int = Field(default=30, ge=1, le=365)
     dedup_days: int = Field(default=30, ge=1, le=365)
     sources: list[Source] = Field(default_factory=lambda: list(SOURCES), min_length=1)
@@ -242,7 +242,7 @@ class RecommendationService:
             run.keyword_excluded_count = len(run.candidates) - len(matching)
             available = [p for p in matching if not (paper_keys(p) & seen)]
             run.excluded_count = len(matching) - len(available)
-            run.papers = available[:settings.count]
+            run.papers = available if settings.count == 0 else available[:settings.count]
             run.status = "failed" if not successes else "partial" if failures else "success" if run.papers else "empty"
             run.note = {
                 "failed": "所有查询均失败，本次不能判断是否有新论文；可手动重试。",
