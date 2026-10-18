@@ -1,0 +1,23 @@
+.tmp/
+.cache/
+.venv/
+node_modules/
+dist/
+__pycache__/
+.pytest_cache/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.secrets/
+config/local/
+local/data/
+local/output/
+*.local
+*.local.*
+.DS_Store
+Thumbs.db
+# Local agent guidance and publication-only working aids are not product files.
+AGENTS.md
+/project-env.ps1
+/docs/validation.md

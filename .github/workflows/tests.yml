@@ -1,0 +1,31 @@
+name: Test both editions
+on:
+  pull_request:
+  push:
+    branches: [main]
+    paths-ignore: ['web/data/catalog.json', '**/*.md']
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - run: python -m pip install uv==0.12.18
+      - run: uv sync --project local --locked
+      - run: npm test
+      - run: uv run --project local --locked python -m unittest discover -s tests -p 'test_*.py'
+      - run: |
+          mkdir -p .tmp
+          uv run --locked python -m pytest -q --basetemp .tmp/pytest
+        working-directory: local
+      - run: npm ci
+        working-directory: local/frontend
+      - run: npm run build
+        working-directory: local/frontend

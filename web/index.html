@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="PaperTrail：浏览定期更新的论文库，查看最新 AI 论文。">
+  <title>PaperTrail · 论文踪迹</title>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="#/all/search">PaperTrail <span>论文踪迹</span></a><a href="https://github.com/Maverickquliushang/PaperTrail" target="_blank" rel="noopener noreferrer">代码与版本选择 ↗</a></header>
+  <main>
+    <section class="intro"><p class="eyebrow">PAPERS, WITH A TRAIL.</p><h1>从一个问题，发现新的线索。</h1><p>AI 最新论文 · 无预设个人研究主题</p><p class="muted">GitHub 网页版：搜索定期更新的论文库，无需启动本地服务。</p></section>
+    <div id="update" class="notice" role="status">正在读取论文库…</div>
+    <nav id="sources" aria-label="来源专区"></nav>
+    <section class="workspace" aria-labelledby="workspace-title">
+      <div class="section-head"><h2 id="workspace-title">综合工作台</h2><nav id="modes" aria-label="功能"><a data-mode="search" href="#/all/search">论文检索</a><a data-mode="daily" href="#/all/daily">每日推荐</a></nav></div>
+      <form id="search-form" autocomplete="off"><label for="query">关键词（可选）</label><div class="search-row"><input id="query" type="search" placeholder="留空浏览最新 AI 论文，或输入关键词" maxlength="250"><button type="submit">检索论文 →</button></div><p class="muted">已收录论文的标题与摘要检索；支持常用中文术语转换。留空可浏览全部。</p></form>
+      <div class="filters">
+        <label id="start-wrap">开始日期<input id="start" type="date"></label><label id="end-wrap">结束日期<input id="end" type="date"></label>
+        <label id="history-wrap" hidden>推荐日期<select id="history"></select></label>
+        <label>列表排序<select id="sort"><option value="date_desc">日期从新到旧</option><option value="date_asc">日期从旧到新</option><option value="relevance">BM25 相关性（检索）</option><option value="title">标题字母顺序</option></select></label>
+      </div>
+      <p id="query-note" class="muted" role="status"></p><p id="error" class="error" role="alert" hidden></p>
+      <details class="status-panel"><summary>来源状态与覆盖范围</summary><div id="status"></div></details>
+      <div id="result-summary" aria-live="polite"></div><div id="results"></div>
+      <nav class="pagination" aria-label="结果翻页"><button id="previous" type="button">← 上一页</button><span id="page-label"></span><button id="next" type="button">下一页 →</button></nav>
+    </section>
+    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期，OpenReview 使用录用日期，其他来源使用发表日期；每日推荐仅收录标注日期为当天的论文，每来源最多 10 篇。</footer>
+  </main>
+</body>
+</html>

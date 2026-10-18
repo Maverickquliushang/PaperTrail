@@ -1,0 +1,52 @@
+# PaperTrail 本地版
+
+React + TypeScript + Vite 前端，Python + FastAPI 后端。适合需要多来源实时检索、自定义每日推荐，或可选飞书群聊工作台的用户。[返回双版本介绍](../README.md)。
+
+## 安装与启动（Windows）
+
+需要 Python 3.11–3.13、Node.js 20.19+ 或 22.12+、uv，并确保可以从终端调用。进入本目录执行：
+
+```powershell
+.\setup.ps1
+.\start.ps1
+```
+
+安装后可双击 `启动PaperTrail.cmd`，自动后台启动并打开网页。双击 `停止PaperTrail.cmd` 停止由启动器管理的服务。默认地址 `http://127.0.0.1:8000/`。命令行可使用 `start.ps1 -Port 8001` 指定端口。启动器面向 Windows；不提供未经验证的跨平台双击启动方式。
+
+如果 PowerShell 策略不允许运行脚本，可以只对当前启动命令使用 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\setup.ps1`，不必修改全局策略。
+
+## 功能
+
+- 实时检索 arXiv、OpenAlex、Hugging Face、顶会索引与 OpenReview；关键词、日期、来源、会议及每源数量可选。
+- 精确论文标识去重；日期、相关性、标题排序；摘要、作者、PDF、逐来源证据；可取消任务。
+- 五个独立来源专区，独立推荐设置和历史；新安装自动推荐默认关闭。
+- 推荐设置支持主题、排除词、北京时间、数量、回溯及历史去重窗口。规则推荐不依赖模型。
+- 可选[飞书机器人](docs/feishu-setup.md)：自行授权后绑定自己的群，支持检索与推荐。新安装没有账号或绑定。
+- 卡片悬停、按钮和链接反馈，支持减少动态效果的系统设置。
+
+本地搜索的“相关性”使用各来源排名融合，并非本地 BM25。来源自身使用的算法不在本项目控制范围。中文术语转换目前在飞书入口提供，不是通用自然语言模型。AI 分析、向量检索、收藏与笔记尚未实现。
+
+## 数据与配置
+
+所有路径相对于当前本地版目录。真实配置在 `.env`、`config/local/`；推荐历史在 `data/`；缓存与后台日志在 `.cache/`、`.tmp/`。这些内容均不会提交到 GitHub。
+
+可复制 `.env.example` 为 `.env`，设置可选 `OPENALEX_API_KEY` 后重启。不要把密钥放入前端代码。
+
+电脑关机、睡眠或服务退出后不执行推荐与飞书回复；恢复后只补当天到期任务。网页关闭不等于后台服务停止。要获得关机后仍可访问的网页，请选择 [GitHub 网页版](../docs/github-pages.md)。
+
+## 开发与验证
+
+每个 PowerShell 会话先加载环境。依赖、缓存与临时文件保留在本目录，不修改系统环境：
+
+```powershell
+. .\project-env.ps1
+uv sync --locked
+uv run --locked python -m pytest -q --basetemp .tmp/pytest
+Set-Location frontend
+npm ci
+npm run build
+```
+
+测试使用独立数据路径，不连接个人飞书群。浏览器测试位于 `frontend/tests/`，使用 `tests/serve_browser.py` 的隔离服务，不应指向正式个人服务。
+
+来源覆盖与日期语义见[来源说明](docs/source-apis.md)。
