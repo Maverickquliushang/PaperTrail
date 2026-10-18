@@ -16,8 +16,8 @@ Fork 后将 README 和 `web/index.html` 中的源仓库、站点链接改成自�
 
 - `mode`：固定为 `ai_latest`，按公共 AI 分类采集，没有个人主题。
 - `sources`：五个来源中的一个或多个。
-- `lookback_days`：论文库日期窗口，1–30 天，默认 30。
-- `candidate_limit`：每个上游列表的候选上限，1–100，默认 100；合并后每来源保留本轮最新至多该数量。
+- `community_feed_days`：Hugging Face 社区列表的抓取月份回溯，1–30 天，默认 30；仅用于选择要读取的月份，不限制检索日期，也不淘汰历史论文。
+- `candidate_limit`：每个上游列表的候选上限，1–100，默认 100；普通来源每轮保留至多该数量；顶会按每个会议、每个索引分别取数，OpenReview 按会议年度和状态分别取数。
 - `recommendation_limit`：每专区每日上限，1–10，默认 10。
 - `history_days`：保留推荐历史并用于去重的天数，1–90，默认 30。
 
@@ -33,9 +33,9 @@ Fork 后将 README 和 `web/index.html` 中的源仓库、站点链接改成自�
 
 ## 更新失败与持久化
 
-工作流仅把公开 `web/data/catalog.json` 提交回仓库，保留窗口内论文和推荐历史；仅部署 `web/`。需要 Actions 对内容的写入权限；若分支保护阻止机器人写入，需由仓库所有者配置允许的更新流程。不要通过关闭所有保护来排查。
+工作流仅把公开 `web/data/catalog.json` 提交回仓库，累计保留历史论文，并保留配置天数内的推荐历史；仅部署 `web/`。需要 Actions 对内容的写入权限；若分支保护阻止机器人写入，需由仓库所有者配置允许的更新流程。不要通过关闭所有保护来排查。
 
-单个来源失败：保留其旧论文库、显示失败和最后成功更新时间，其他来源继续更新。所有来源失败：部署明确失败状态和保留的旧库，日志给出警告，不伪造新论文；首次运行全失败时站点显示空库。
+单个来源失败：保留其历史论文库、显示失败和最后成功更新时间，其他来源继续更新。所有来源失败：部署明确失败状态和保留的旧库，日志给出警告，不伪造新论文；首次运行全失败时站点显示空库。
 
 工作流被终止或部署失败时，上次已部署网站继续存在，页面更新时间用于判断新鲜度。源 API 报错不是 GitHub Pages 本身故障。
 
@@ -51,14 +51,26 @@ Fork 后将 README 和 `web/index.html` 中的源仓库、站点链接改成自�
 
 ## 公共 AI 采集范围
 
-- arXiv：`cs.AI / cs.LG / cs.CL / cs.CV / cs.NE / stat.ML` 分类，首次提交日期降序。
-- OpenAlex：主主题属于 Artificial Intelligence 子领域（ID 1702），发表日期降序。
-- 顶会索引：11 个 AI 会议的 OpenAlex 论文集，收录有限，非会议官网全集。
+- arXiv：`cs.AI / cs.LG / cs.CL / cs.CV / cs.NE / stat.ML` 分类，首次提交日期降序，不设近期时间窗口。
+- OpenAlex：主主题属于 Artificial Intelligence 子领域（ID 1702），发表日期降序，无起始日期限制。
+- 顶会索引：11 个会议各自查询 OpenAlex 论文集和 DBLP 会议流，每个索引每会每轮至多 `candidate_limit` 条候选，不设起始日期。排除 DBLP 明确标注的 workshop、Findings、演示、教程和整本论文集记录；索引分类不是独立录用核验。来源收录有限，非会议官网全集。
 - Hugging Face：当前和窗口起始月份的 Daily Papers 社区列表，取有限候选，按论文原始 `publishedAt` 筛日期。社区收录日期不代替论文发表日期。
-- OpenReview：最近两年 ICLR、ICML、NeurIPS 已录用主会列表，取有限候选，按 `pdate`（录用日期）筛选。旧 API v1 会议可能缺失。
+- OpenReview：已录用读取最近两年 ICLR、ICML、NeurIPS 主会列表；公开投稿读取上一年、本年、下一年会议公开的投稿入口（兼顾下一届提前投稿）。每个会议年度和状态取有限候选，不设 30 天日期窗口。已录用使用 `pdate`，其他状态使用 `cdate`（创建日期，不代表首次公开日期）。从会议组声明的 venueid 映射识别状态，不确定时标记未知；只读公开记录，不访问私有投稿，旧 API v1 会议可能缺失。
 
 来源日期按其原始日历日期展示；并不统一转换为北京时间。北京时间只决定采集计划和“当天”日期标签。来源收录延迟或候选上限可能造成遗漏，页面不宣称覆盖当日全部 AI 论文。
 
 浏览器关键词只用于当前页面筛选，不写入站点配置、地址或推荐数据；无统计脚本，不上传搜索历史。公共论文内容中可能自然出现任意研究术语，不代表维护者的个人偏好。
 
 分类接口参考：[arXiv API](https://info.arxiv.org/help/api/user-manual.html)、[OpenAlex 子领域](https://help.openalex.org/data/subfields/)、[Hugging Face OpenAPI](https://huggingface.co/.well-known/openapi.json)、[OpenReview 已录用论文](https://docs.openreview.net/how-to-guides/data-retrieval-and-modification/how-to-get-all-notes-for-submissions-reviews-rebuttals-etc)。
+
+## 历史论文与二级目录
+
+检索库没有统一的 30 天限制。每次有限取数后，已收录记录持续保留；因此“不设起始日期”不等于一次导入全部历史论文。新建站点可能只覆盖各接口返回的候选，页面顶部显示总收录量，来源面板分别报告各会议和索引的状态。
+
+顶会路由示例：`#/conferences/search/all`、`#/conferences/search/CVPR`、`#/conferences/daily/ICML`。切换检索/推荐保留会议选择，刷新或分享链接也保留二级目录。所有会议的每日推荐合计仍最多 10 篇，子目录筛选这份推荐，不单独生成每会 10 篇。
+
+OpenReview 路由：`#/openreview/search/accepted`（默认）、`#/openreview/search/public`。公开投稿包含所有已采集的公开状态，并非只有在审。综合搜索默认排除仅由 OpenReview 提供且未录用的记录；若同一论文也由 arXiv 等来源收录，仍可在相应来源检索。公开投稿的每日列表单独保存、最多 10 篇，不表示录用或质量认可。
+
+DBLP 仅有年份的记录显示“年份（仅年份）”，不补造日期；排序使用年份，设置精确开始/结束日期时排除此类记录。DBLP 通常无摘要，只能匹配其提供的标题；通过 DOI 与其他索引精确合并后可能获得摘要。参考 [DBLP 搜索 API](https://dblp.org/faq/13501473.html) 和 [DBLP 元数据许可](https://dblp.org/db/about/copyright.html)。
+
+访问验证页、429 或拒绝访问会显示失败；DBLP 出现验证时本轮停止后续 DBLP 请求，不绕过验证，其他索引继续采集。即使自动采集失败，二级目录中的 DBLP 历年目录链接仍可用于手动浏览。

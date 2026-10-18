@@ -15,6 +15,7 @@
     <nav id="sources" aria-label="来源专区"></nav>
     <section class="workspace" aria-labelledby="workspace-title">
       <div class="section-head"><h2 id="workspace-title">综合工作台</h2><nav id="modes" aria-label="功能"><a data-mode="search" href="#/all/search">论文检索</a><a data-mode="daily" href="#/all/daily">每日推荐</a></nav></div>
+      <section id="subdirectory" hidden aria-label="专区二级目录"><nav id="subnav" aria-label="分类入口"></nav><p id="scope-note" class="muted"></p><div id="directory-links" class="directory-links"></div></section>
       <form id="search-form" autocomplete="off"><label for="query">关键词（可选）</label><div class="search-row"><input id="query" type="search" placeholder="留空浏览最新 AI 论文，或输入关键词" maxlength="250"><button type="submit">检索论文 →</button></div><p class="muted">已收录论文的标题与摘要检索；支持常用中文术语转换。留空可浏览全部。</p></form>
       <div class="filters">
         <label id="start-wrap">开始日期<input id="start" type="date"></label><label id="end-wrap">结束日期<input id="end" type="date"></label>
@@ -26,7 +27,7 @@
       <div id="result-summary" aria-live="polite"></div><div id="results"></div>
       <nav class="pagination" aria-label="结果翻页"><button id="previous" type="button">← 上一页</button><span id="page-label"></span><button id="next" type="button">下一页 →</button></nav>
     </section>
-    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期，OpenReview 使用录用日期，其他来源使用发表日期；每日推荐仅收录标注日期为当天的论文，每来源最多 10 篇。</footer>
+    <footer>每天北京时间 09:00 计划采集，GitHub Actions 可能延迟。来源收录有限，未搜到不等于没有论文。<br>arXiv 使用首次提交日期；OpenReview 已录用使用录用日期，其他公开投稿使用创建日期；DBLP 仅提供年份时不补造月日。每日推荐仅收录标注日期为当天的论文，每来源最多 10 篇。</footer>
   </main>
 </body>
 </html>

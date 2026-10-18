@@ -7,7 +7,7 @@
     "conferences",
     "openreview"
   ],
-  "lookback_days": 30,
+  "community_feed_days": 30,
   "candidate_limit": 100,
   "recommendation_limit": 10,
   "history_days": 30

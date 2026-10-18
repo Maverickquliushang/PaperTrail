@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {search, translateQuery, safeLink, sortPapers} from '../web/search.js';
+import {search, translateQuery, safeLink, sortPapers, scopedPapers, conferenceMatch} from '../web/search.js';
 const terms = JSON.parse(readFileSync(new URL('../web/data/terms.json', import.meta.url)));
 const paper = (id, title, date, sources=['arxiv']) => ({id,title,date,sources,abstract:''});
 test('Chinese phrasing, no-space command and aliases search the same corpus', () => {
@@ -29,4 +29,23 @@ test('External links reject executable schemes', () => {
   assert.equal(safeLink('javascript:alert(1)'),null);
   assert.equal(safeLink('https://user@example.com'),null);
   assert.equal(safeLink('https://arxiv.org/abs/1234.56789'),'https://arxiv.org/abs/1234.56789');
+});
+
+test('Conference children filter exact conference evidence and keep historical years', () => {
+  const a={...paper('a','Study',null,['conferences']),evidence:[{source:'conferences',conference:'ICML',publication_year:2018,index_provider:'DBLP'}]};
+  const b={...paper('b','Study','2020-01-01',['conferences']),evidence:[{source:'conferences',conference:'CVPR',publication_date:'2020-01-01'}]};
+  assert.equal(conferenceMatch(a,'CVPR'),false);
+  const items=scopedPapers([a,b],'conferences','ICML');
+  assert.equal(items.length,1); assert.equal(items[0].year,2018); assert.equal(items[0].date,null);
+  assert.equal(search(items,'').length,1);
+  assert.equal(search(items,'',{start:'2018-01-01'}).length,0);
+});
+
+test('OpenReview defaults to accepted; public submissions preserve explicit status and date', () => {
+  const a={...paper('a','Accepted','2018-01-01',['openreview']),evidence:[{source:'openreview',review_status:'accepted',publication_date:'2018-01-01'}]};
+  const b={...paper('b','Submission','2026-10-01',['openreview']),evidence:[{source:'openreview',review_status:'unknown',publication_date:'2026-10-01'}]};
+  assert.deepEqual(scopedPapers([a,b],'openreview').map(p=>p.id),['a']);
+  assert.equal(scopedPapers([a,b],'openreview','all','public').length,2);
+  assert.equal(scopedPapers([b],'openreview','all','public')[0].date_kind,'投稿创建日期');
+  assert.deepEqual(scopedPapers([a,b],'all').map(p=>p.id),['a']);
 });
