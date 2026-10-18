@@ -58,21 +58,7 @@ class LatestProviders(Providers):
             records, total = parse_openalex(json.loads(body), stamp)
             note = 'OpenAlex 主主题属于 Artificial Intelligence 子领域（1702）。日期为索引发表日。'
         elif source == 'huggingface':
-            # Current and previous month cover a 30-day window across month boundaries.
-            months = sorted({str(start)[:7], str(end)[:7]})
-            records, successes = [], 0
-            for month in months:
-                try:
-                    body = await self.request(source, 'https://huggingface.co/api/daily_papers', {
-                        'month': month, 'limit': limit, 'sort': 'publishedAt'})
-                    records.extend(parse_huggingface(json.loads(body), stamp))
-                    successes += 1
-                except SourceError:
-                    partial = True
-            if not successes:
-                raise SourceError('feed_unavailable', 'Hugging Face 社区论文列表请求失败。')
-            total = None
-            note = 'Hugging Face 月度 Daily Papers 候选；日期使用原论文 publishedAt，社区收录日不作为发表日。'
+            return await self.huggingface_catalog(end)
         else:
             return await self.openreview_catalog(end, limit)
         if source in ('arxiv','openalex'):
@@ -89,6 +75,41 @@ class LatestProviders(Providers):
         return LatestData(records=records, total=total, scanned=scanned,
                           limited=total is None or total > limit, partial=partial,
                           note=note, retrieved_at=stamp)
+
+    async def huggingface_page(self, cursor):
+        from urllib.parse import urlparse, parse_qs
+        await asyncio.sleep(.3)
+        params={'limit':100}
+        if cursor:params['cursor']=cursor
+        async with self.client.stream('GET','https://huggingface.co/api/papers',params=params,timeout=40) as response:
+            if response.status_code in (401,403,429):
+                raise SourceError('rate_limited' if response.status_code==429 else 'access_denied','Hugging Face 访问受限，保留断点后重试。')
+            if response.status_code != 200:raise SourceError('http_error','Hugging Face 请求失败，保留断点。')
+            body=bytearray()
+            async for chunk in response.aiter_bytes():
+                body.extend(chunk)
+                if len(body)>8*1024*1024:raise SourceError('response_too_large','Hugging Face 单页响应过大，未推进断点。')
+            rows=json.loads(body)
+            if not isinstance(rows,list):raise ValueError('Expected papers')
+            next_link=response.links.get('next',{}).get('url')
+            following=None
+            if next_link:
+                url=urlparse(next_link)
+                if url.scheme!='https' or url.netloc!='huggingface.co' or url.path!='/api/papers':raise ValueError('Unexpected next link')
+                following=parse_qs(url.query).get('cursor',[None])[0]
+                if not following:raise ValueError('Missing cursor')
+            return rows,following
+
+    async def huggingface_catalog(self,end):
+        from scripts.huggingface_sync import synchronize
+        state=getattr(self,'source_state',{})
+        records,entry=await synchronize(self,end,state.get('huggingface'),seconds=getattr(self,'huggingface_seconds',180))
+        state['huggingface']=entry;self.source_state=state
+        status='partial' if entry.get('pending') or entry.get('error') else 'success'
+        note=entry.get('error') or ('历史分页进行中，将从断点自动续采。' if entry['pending'] else '本轮官方论文列表已遍历。')
+        note+=f" 已检查 {entry['scanned']} 条、{entry['pages']} 页；无 200 篇或两个月收录上限。"
+        return LatestData(records=records,retrieved_at=now(),partial=status!='success',reports=[{
+            'label':'Hugging Face 全论文列表','state':status,'count':len(records),'note':note}],scanned=len(records),note=note)
 
     async def conference_catalog(self, end, limit):
         from scripts.conference_sync import synchronize

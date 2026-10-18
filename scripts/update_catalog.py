@@ -55,8 +55,9 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
     start = today - timedelta(days=config["community_feed_days"] - 1)
     fresh, statuses = [], {}
     providers.conference_state = previous.get("conference_sync", {})
+    providers.source_state = previous.get("source_sync", {})
     for source in config["sources"]:
-        if backfill_only and source != "conferences":
+        if backfill_only and source not in ("conferences", "huggingface"):
             statuses[source] = previous.get("source_status", {}).get(source, {"state":"error", "queries":[]})
             continue
         records, reports = [], []
@@ -72,7 +73,7 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
         for report in reports:
             report["updated_at"] = stamp if report["state"] != "error" else old_reports.get(report.get("label"), {}).get("updated_at")
         successes = sum(r["state"] != "error" for r in reports)
-        state = "error" if not successes else "partial" if successes < len(reports) or any(r["state"] == "partial" for r in reports) else "success"
+        state = "error" if not successes else "partial" if successes < len(reports) or any(r["state"] in ("partial", "limited") for r in reports) else "success"
         statuses[source] = {"state": state, "attempted_at": stamp,
                             "updated_at": stamp if successes else previous.get("source_status", {}).get(source, {}).get("updated_at"),
                             "queries": reports, "fresh_count": len({r.source_id for r in records})}
@@ -139,6 +140,7 @@ async def collect(config, previous, providers, instant=None, backfill_only=False
             "search_start_date": None, "community_feed_days": config["community_feed_days"],
             "conference_catalog": {"names": list(CONFERENCE_SOURCES), "dblp_streams": DBLP_STREAMS, "start_date": None, "counts": conference_counts, "total": sum("conferences" in p["sources"] for p in papers)},
             "conference_sync": getattr(providers, "conference_state", {}),
+            "source_sync": getattr(providers, "source_state", {}),
             "papers": papers, "source_status": statuses,
             "recommendations": recommendations, "history": history,
             "notice": "公共 AI 论文库，检索不设统一起始日期；会议论文分页累计收录，无总篇数上限；非全站实时搜索。每日推荐按来源日期浏览累计论文库，支持全部日期与各日篇数；仅年份记录不参与每日列表。"}
@@ -149,7 +151,7 @@ async def main():
     path = ROOT / "web/data/catalog.json"
     previous = load_catalog(path)
     backfill_only = os.getenv("PAPERTRAIL_BACKFILL_ONLY") == "true"
-    if backfill_only and not needs_backfill(previous.get("conference_sync", {}), datetime.now(BEIJING).date()):
+    if backfill_only and not needs_backfill({**previous.get("conference_sync", {}), **previous.get("source_sync", {})}, datetime.now(BEIJING).date()):
         print("No resumable conference backlog; waiting for daily refresh.")
         return
     async with httpx.AsyncClient(timeout=35, follow_redirects=True, headers={"User-Agent": "PaperTrail-Pages/1.0"}) as client:

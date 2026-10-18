@@ -12,6 +12,9 @@ class FakeLatest(LatestProviders):
         self.calls = []
         self.fail_one = fail_one
 
+    async def huggingface_page(self, cursor):
+        return json.loads(await self.request('huggingface','https://huggingface.co/api/papers',{'limit':100})),None
+
     async def dblp_query(self, query):
         return {'results':{'bindings':[{'count':{'value':'0'}}] if 'COUNT(' in query else []}}
 
@@ -43,7 +46,7 @@ class LatestTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('conferences',params)
         self.assertNotIn('search', params['openalex'])
         self.assertNotIn('search.title_and_abstract', params['openalex'])
-        self.assertEqual({p['month'] for s, _, p in provider.calls if s == 'huggingface'}, {'2026-09','2026-10'})
+        self.assertTrue(all('month' not in p for s, _, p in provider.calls if s == 'huggingface'))
         self.assertEqual(len([1 for s, url, _ in provider.calls if s == 'openreview' and url.endswith('/notes')]), 15)
 
     async def test_community_listing_does_not_replace_publication_date(self):

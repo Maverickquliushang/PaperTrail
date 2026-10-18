@@ -119,9 +119,9 @@ function renderStatus() {
   for (const key of Object.keys(sourceNames).filter(s => source === 'all' || s === source)) {
     const status = catalog.source_status[key], node = element('div');
     const reports = visibleReports(status);
-    const state = reports.length ? (reports.every(r => r.state === 'error') ? 'error' : reports.some(r => ['error','partial'].includes(r.state)) ? 'partial' : 'success') : status?.state;
+    const state = reports.length ? (reports.every(r => r.state === 'error') ? 'error' : reports.some(r => ['error','partial','limited'].includes(r.state)) ? 'partial' : 'success') : status?.state;
     const updated = reports.length ? reports.map(r => r.updated_at).filter(Boolean).sort().at(-1) : status?.updated_at;
-    const label = {success:'本轮采集成功',partial:'部分查询失败',error:'本轮采集失败'}[state] || '尚未采集';
+    const label = {success:'本轮采集成功',partial:'尚未完整采集',error:'本轮采集失败'}[state] || '尚未采集';
     node.append(element('strong',`${sourceNames[key]} · ${label}`),element('p',`最近成功更新：${formatted(updated)}`));
     for (const report of reports) node.append(element('p', `${report.label}：${report.state === 'error' ? '失败' : `${report.count} 篇候选`}。${report.note}`));
     $('status').append(node);
@@ -135,7 +135,7 @@ function emptyMessage() {
   }
   const available = scopedPapers(catalog.papers, source, conference, review);
   if (available.length) return '已收录论文中没有匹配当前关键词或日期的结果。可清空关键词或放宽筛选日期；筛选不会向来源实时取数。';
-  const failed = keys.filter(key => visibleReports(catalog.source_status[key]).some(r => ['error','partial'].includes(r.state)) || catalog.source_status[key]?.state === 'error');
+  const failed = keys.filter(key => visibleReports(catalog.source_status[key]).some(r => ['error','partial','limited'].includes(r.state)) || catalog.source_status[key]?.state === 'error');
   if (failed.length) return `${failed.map(key => sourceNames[key]).join('、')}最近一轮采集未完成，当前没有可用论文。这不表示来源没有论文，请展开“来源状态与覆盖范围”查看原因。`;
   if (!catalog.updated_at) return '论文库尚未生成。首次部署后运行仓库中的 Update papers and deploy 工作流。';
   const scope = source === 'all' ? '当前论文库' : sourceNames[source];
@@ -149,7 +149,7 @@ function updateHistoryLabels() {
   const dates = new Set([...daily.days.keys(), ...(catalog.history || []).map(h => h.date)]);
   if (/^\d{4}-\d{2}-\d{2}$/.test(selected)) dates.add(selected);
   $('history').replaceChildren();
-  const all = element('option',`全部日期 · ${daily.all.length} 篇`); all.value = 'all'; $('history').append(all);
+  const all = element('option',`全部日期 · 已收录 ${daily.all.length} 篇`); all.value = 'all'; $('history').append(all);
   for (const date of [...dates].sort().reverse()) {
     const option = element('option',`${date} · ${daily.days.get(date)?.length || 0} 篇`);
     option.value = date; $('history').append(option);
