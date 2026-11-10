@@ -10,6 +10,10 @@
 
 Fork 后将 README 和 `code/web/index.html` 中的源仓库、站点链接改成自己的地址。站点资源本身使用相对路径，兼容仓库子路径。
 
+**网页与论文数据分开发布。** Pages 只接收界面、术语表和目录（`data/catalog.json`）。历史分片保存在公开仓库的 `code/web/data/papers/`，浏览器按目录中固定的 Git 提交读取 GitHub Raw。目录与分片始终来自同一版；采集提交复用未变化的文件，不会把整库再打进 Pages。新方式需要公开可读的仓库，访客不需要密钥。本机累计库和离线发行包仍从自己的 `./data/` 加载。
+
+Actions 日志中的 **Stage UI and catalog without historical data shards** 会显示部署字节数、论文数与分片数。发布前会核对分片路径和数量；如果包意外超过 64 MiB 会停止发布。这个保护只限制网页部署包，不限制论文收录量。
+
 ## 调整来源与数量
 
 编辑 `code/config/catalog.json`：

@@ -42,7 +42,7 @@ jobs:
         run: |
           collect=true
           if [ "$EVENT_NAME" = push ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            if ! git diff --name-only "$BEFORE" HEAD -- scripts config local/backend | grep -q .; then
+            if ! git diff --name-only "$BEFORE" HEAD -- scripts config local/backend ':(exclude)scripts/stage_pages.py' | grep -q .; then
               collect=false
             fi
           fi
@@ -77,10 +77,14 @@ jobs:
             git pull --rebase origin main
             git push origin HEAD:main
           fi
+      - name: Stage UI and catalog without historical data shards
+        run: |
+          git diff --exit-code HEAD -- web
+          python scripts/stage_pages.py web "$RUNNER_TEMP/papertrail-pages" "$GITHUB_REPOSITORY" "$(git rev-parse HEAD)"
       - uses: actions/configure-pages@v6.0.0
       - uses: actions/upload-pages-artifact@v5.0.0
         with:
-          path: code/web
+          path: ${{ runner.temp }}/papertrail-pages
   deploy:
     needs: build
     runs-on: ubuntu-latest

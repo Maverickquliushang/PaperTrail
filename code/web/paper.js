@@ -62,7 +62,7 @@ async function main() {
     if(!response.ok)throw new Error('论文库清单加载失败，请重试。');
     const catalog=await response.json();
     if(catalog.schema!==2)throw new Error('论文库格式不正确，请重试。');
-    const paper=await findPaper(catalog,params,createShardLoader(),(done,total)=>{$('paper-status').textContent=`正在定位论文 · ${done}/${total} 个候选分片`;});
+    const paper=await findPaper(catalog,params,createShardLoader(fetch,catalog.shard_base),(done,total)=>{$('paper-status').textContent=`正在定位论文 · ${done}/${total} 个候选分片`;});
     if(paper){render(paper);$('paper-status').textContent='本站已收录的论文详情';}
     else $('paper-status').textContent='当前论文库中未找到这篇论文，记录可能已合并或更新，请返回列表重新查找。';
   } catch(error){$('paper-status').textContent=error.message;$('paper-retry').hidden=false;}

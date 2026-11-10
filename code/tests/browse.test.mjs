@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 import {dateChoices,selectShards,createShardLoader} from '../web/browse.js';
 import {conferenceYear} from '../web/search.js';
 
+test('the published catalog reads its exact revision; a local catalog stays on its own origin',async()=>{
+  const urls=[], fetcher=async url=>{urls.push(url);return {ok:true,json:async()=>[{id:'p'}]};};
+  const base='https://raw.githubusercontent.com/example/fork/'+ 'a'.repeat(40) +'/code/web/data/';
+  const shard={file:'papers/part-abcdef.json'};
+  for(const storage of [undefined, base]){
+    const load=createShardLoader(fetcher,storage);
+    assert.equal((await load([shard]))[0].id,'p');
+    await assert.rejects(load([{file:'../elsewhere.json'}]),/路径/);
+  }
+  assert.deepEqual(urls,['./data/'+shard.file,base+shard.file]);
+  assert.throws(()=>createShardLoader(fetcher,base.replace('a'.repeat(40),'main')),/地址/);
+});
+
 test('year filters use matching conference evidence rather than another edition date',()=>{
   const paper={id:'p',year:2025,evidence:[{source:'conferences',conference:'NeurIPS',publication_year:2025},{source:'conferences',conference:'NeurIPS',publication_year:2026}]};
   assert.equal(conferenceYear([paper],'2026','NeurIPS')[0].year,2026);

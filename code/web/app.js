@@ -5,7 +5,7 @@ import {sourceNames, translateQuery, search, sortPapers, safeLink, conferenceNam
 const $ = id => document.getElementById(id);
 const descriptions = {all:'浏览全部已采集来源',arxiv:'追踪各学科的预印本研究',openalex:'OpenAlex 学术索引 · 支持具体日期',huggingface:'社区收录的机器学习论文',conferences:'DBLP 与会议官网 · 按会议、年份浏览',openreview:'已录用论文与公开投稿分开浏览'};
 let routeVersion = 0, loading = false;
-const loadShards = createShardLoader();
+let loadShards;
 let preview = false, preloadTimer;
 const openedPapers = new Set();
 let restoredPage = null, restoredScroll = null;
@@ -57,6 +57,7 @@ async function refreshCatalog() {
   if(!response.ok)throw new Error('论文库清单读取失败，请稍后重试');
   const fresh=await response.json();
   if(fresh.schema!==2 || fresh.mode!=='ai_latest' || !Array.isArray(fresh.papers))throw new Error('论文库清单格式不正确');
+  loadShards=createShardLoader(fetch,fresh.shard_base);
   catalog=fresh;catalog.inline_papers=fresh.papers;
 }
 async function setRoute(allowRefresh = true) {
@@ -290,6 +291,7 @@ try {
   const failed = Object.values(catalog.source_status).filter(s => s.state !== 'success').length;
   $('update').textContent = `论文库更新：${formatted(catalog.updated_at)}（北京时间） · ${catalog.paper_count ?? catalog.papers.length} 篇` + (failed ? ` · ${failed} 个来源未完整更新，详情见来源状态。` : '') + (catalog.notice ? ` · ${catalog.notice}` : '');
   catalog.inline_papers = catalog.papers;
+  loadShards=createShardLoader(fetch,catalog.shard_base);
   $('query').value = '';
   restoreListState();
   setRoute();
